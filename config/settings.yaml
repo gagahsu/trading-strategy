@@ -1,0 +1,78 @@
+# ATR 自適應網格 · 全域設定
+#
+# 修改後建議跑一次 `atrgrid advise --provider csv --csv-dir data/bars`
+# 確認參數沒有觸發成本警告。
+
+decision_time: "13:00"
+timezone: "Asia/Taipei"
+
+fees:
+  # 國泰證券手續費 2.8 折
+  discount: "0.28"
+  # 最低收費 1 元（「一份」= 手續費仍為 1 元的最大股數）
+  minimum: 1
+
+risk:
+  # ★ 必填：可動用於網格加碼的現金（元）。
+  #   為 0 時所有買進訊號都會被擋下並註明「現金不足」。
+  cash: 0
+
+  # 現金低於此水位就停止買進，留作生活備用金或其他用途
+  cash_floor: 0
+
+  # 日 K 超過幾天沒更新就視為資料過期，不出建議
+  max_data_staleness_days: 5
+
+  # 步長下限至少要是「一買一賣來回成本」的幾倍。
+  # 低於此倍數時 advise 會警告 —— 網格太密只是在幫券商和國庫打工。
+  min_step_cost_multiple: 3.0
+
+# 各資產類別的網格參數。個股可在 portfolio.yaml 的 grid: 區塊覆寫。
+defaults:
+  # ── 一般股票型 ETF ─────────────────────────────────────────────
+  # 來回成本約 0.12~0.14%（手續費 1+1 元 + 證交稅 0.1%）
+  equity:
+    atr_period: 14
+    atr_multiplier: 0.8      # 步長 = 0.8 × ATR
+    min_step_pct: 1.0        # 約為來回成本的 8 倍
+    max_step_pct: 5.0
+    max_buy_rungs: 5         # 最多往下加碼 5 份（約 2.5 萬元）
+    max_sell_rungs: 5        # 最多往上減碼 5 份
+    max_rungs_per_day: 2
+    gap_atr_limit: 3.0
+    drift_mode: "up_only"      # 錨點只跟漲不跟跌，避免多頭時提早賣光
+    drift_beta: 0.02
+    trend_ema_period: 60
+    allow_loss_sell: false
+
+  # ── 債券 ETF ──────────────────────────────────────────────────
+  # 免證交稅，來回成本僅約 0.04%；但波動也低（ATR% 常在 0.3~0.6%）
+  bond:
+    atr_period: 14
+    atr_multiplier: 1.0      # 波動小，用完整 ATR 當步長
+    min_step_pct: 0.40       # 約為來回成本的 10 倍
+    max_step_pct: 2.0
+    max_buy_rungs: 8         # 債券部位當壓艙石，容許加碼較深
+    max_sell_rungs: 5
+    max_rungs_per_day: 2
+    gap_atr_limit: 3.0
+    drift_mode: "up_only"
+    drift_beta: 0.015
+    trend_ema_period: 60
+    allow_loss_sell: false
+
+  # ── 槓桿型 ETF ────────────────────────────────────────────────
+  # 波動大且有長期複利耗損，規則刻意不對稱：少加碼、多減碼
+  leveraged:
+    atr_period: 14
+    atr_multiplier: 0.7
+    min_step_pct: 1.8
+    max_step_pct: 8.0
+    max_buy_rungs: 2         # 不對槓桿商品攤平
+    max_sell_rungs: 6        # 上漲時樂於分批減碼
+    max_rungs_per_day: 1
+    gap_atr_limit: 3.0
+    drift_mode: "off"          # 槓桿不追高，錨點不隨趨勢上移
+    drift_beta: 0.0
+    trend_ema_period: 60
+    allow_loss_sell: false

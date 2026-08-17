@@ -1,0 +1,109 @@
+name: 每日 13:00 網格建議
+
+on:
+  schedule:
+    # 台北 13:00 = UTC 05:00，週一到週五
+    # （國定假日不在 cron 判斷範圍，由資料新鮮度檢查兜底）
+    - cron: "0 5 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      commit_state:
+        description: "把建議視為已成交並寫回狀態（僅供模擬）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-advice
+  cancel-in-progress: false
+
+jobs:
+  advise:
+    runs-on: ubuntu-latest
+    # secrets 無法直接用在 step 的 if 條件，先提升成 job 層級的 env
+    env:
+      NOTIFY_WEBHOOK: ${{ secrets.NOTIFY_WEBHOOK }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安裝
+        run: pip install -e .
+
+      - name: 產生建議
+        id: advise
+        run: |
+          mkdir -p reports
+          DATE=$(TZ=Asia/Taipei date +%Y-%m-%d)
+          echo "date=$DATE" >> "$GITHUB_OUTPUT"
+          atrgrid advise \
+            --provider twse \
+            --format markdown \
+            --out "reports/$DATE.md" \
+            --json "reports/$DATE.json" \
+            --persist-anchors
+          atrgrid advise --provider twse --format html --out "reports/$DATE.html"
+
+      - name: 貼到 Job Summary
+        run: cat "reports/${{ steps.advise.outputs.date }}.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上傳報表
+        uses: actions/upload-artifact@v4
+        with:
+          name: advice-${{ steps.advise.outputs.date }}
+          path: reports/
+          retention-days: 90
+
+      - name: 通知（選用）
+        if: env.NOTIFY_WEBHOOK != ''
+        env:
+          DATE: ${{ steps.advise.outputs.date }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+
+          date = os.environ["DATE"]
+          with open(f"reports/{date}.json", encoding="utf-8") as f:
+              decisions = json.load(f)
+
+          orders = [
+              d for d in decisions
+              if d["action"] in ("BUY", "SELL") and d["shares"]
+          ]
+          if not orders:
+              raise SystemExit(0)
+
+          label = {"BUY": "買", "SELL": "賣"}
+          lines = [f"**{date} 13:00 網格建議**"]
+          for d in orders:
+              lines.append(
+                  f"{label[d['action']]} {d['name']} "
+                  f"{d['rungs']} 筆 × {d['lot_shares']} 股 @ {d['price']}"
+              )
+          body = json.dumps({"content": "\n".join(lines)}).encode()
+          req = urllib.request.Request(
+              os.environ["NOTIFY_WEBHOOK"],
+              data=body,
+              headers={"Content-Type": "application/json"},
+          )
+          urllib.request.urlopen(req, timeout=20)
+          PY
+
+      - name: 寫回狀態
+        run: |
+          if [ -n "$(git status --porcelain state/)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add state/
+            git commit -m "chore: 更新網格狀態 ${{ steps.advise.outputs.date }}"
+            for i in 1 2 3 4; do
+              git push && break || sleep $((2 ** i))
+            done
+          else
+            echo "狀態無變動"
+          fi

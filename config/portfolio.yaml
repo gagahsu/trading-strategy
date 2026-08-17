@@ -1,0 +1,162 @@
+# 持股清單（依 2026-08-17 對帳資料建立）
+#
+# ★★ ticker 欄位務必先核對 ★★
+# 下方代號是依名稱推定的，尚未經交易所資料驗證，所以 ticker_verified 全部為
+# false —— 未驗證的標的不會產生任何下單建議。
+#
+# 流程：
+#   1. 標示 TBD* 的請填入正確代號
+#   2. 執行 `atrgrid verify-tickers`（會比對交易所登記名稱）
+#   3. 全部相符後，把各檔的 ticker_verified 改成 true
+#
+# avg_cost = 對帳單的「成本 ÷ 股數」。
+# class: equity（股票型）/ bond（債券型，免證交稅）/ leveraged（槓桿型）
+
+holdings:
+  - ticker: "0052"
+    name: "富邦科技"
+    class: equity
+    shares: 769
+    avg_cost: 59.0234
+    ticker_verified: false
+
+  - ticker: "00685L"
+    name: "群益臺灣加權正2"
+    class: leveraged
+    shares: 2000
+    avg_cost: 10.2835
+    ticker_verified: false
+
+  - ticker: "00725B"
+    name: "國泰投資級公司債"
+    class: bond
+    shares: 6000
+    avg_cost: 35.058
+    ticker_verified: false
+    # 配息型標的請登記除息，否則網格會把除息當成下跌而誤買。
+    # ex_dividends:
+    #   - { date: "2026-07-16", amount: 0.31 }
+
+  - ticker: "00735"
+    name: "國泰臺韓科技"
+    class: equity
+    shares: 346
+    avg_cost: 100.5405
+    ticker_verified: false
+
+  - ticker: "00757"
+    name: "統一FANG+"
+    class: equity
+    shares: 1073
+    avg_cost: 111.5424
+    ticker_verified: false
+    grid:
+      # 已獲利 25%，且屬長期趨勢部位：步長放寬、減碼上限收窄，
+      # 避免在強勢趨勢中被網格洗出場。
+      atr_multiplier: 1.0
+      max_sell_rungs: 3
+
+  - ticker: "00878"
+    name: "國泰永續高股息"
+    class: equity
+    shares: 1000
+    avg_cost: 22.979
+    ticker_verified: false
+    # 季配息，務必登記除息日與金額
+    # ex_dividends:
+    #   - { date: "2026-08-18", amount: 0.40 }
+
+  - ticker: "00910"
+    name: "第一金太空衛星"
+    class: equity
+    shares: 439
+    avg_cost: 68.0956
+    ticker_verified: false
+
+  - ticker: "00933B"
+    name: "國泰10Y+金融債"
+    class: bond
+    shares: 3500
+    avg_cost: 16.162
+    ticker_verified: false
+
+  - ticker: "00937B"
+    name: "群益ESG投等債20+"
+    class: bond
+    shares: 3017
+    avg_cost: 14.8571
+    ticker_verified: false
+
+  - ticker: "00947"
+    name: "台新臺灣IC設計"
+    class: equity
+    shares: 754
+    avg_cost: 33.1194
+    ticker_verified: false
+
+  - ticker: "00951"
+    name: "中信日本半導體"
+    class: equity
+    shares: 4904
+    avg_cost: 18.864
+    ticker_verified: false
+
+  - ticker: "00955"
+    name: "中信日本商社"
+    class: equity
+    shares: 12332
+    avg_cost: 15.2839
+    ticker_verified: false
+
+  # ── 以下代號待確認 ─────────────────────────────────────────────
+  - ticker: "TBD1"
+    name: "元大航太防衛科技"
+    class: equity
+    shares: 600
+    avg_cost: 24.40
+    ticker_verified: false
+
+  - ticker: "TBD2"
+    name: "台新美國電力基建"
+    class: equity
+    shares: 7000
+    avg_cost: 15.0769
+    ticker_verified: false
+
+  - ticker: "00981A"
+    name: "主動統一台股增長"
+    class: equity
+    shares: 6000
+    avg_cost: 29.618
+    ticker_verified: false
+
+  - ticker: "TBD3"
+    name: "主動中信非投等債"
+    class: bond
+    shares: 10000
+    avg_cost: 10.3671
+    ticker_verified: false
+    grid:
+      # 非投等債的波動介於投等債與股票之間，步長下限拉高一些
+      min_step_pct: 0.60
+
+  - ticker: "TBD4"
+    name: "主動統一全球創新"
+    class: equity
+    shares: 5000
+    avg_cost: 19.1052
+    ticker_verified: false
+
+  - ticker: "TBD5"
+    name: "主動元大AI新經濟"
+    class: equity
+    shares: 4000
+    avg_cost: 18.707
+    ticker_verified: false
+
+  - ticker: "TBD6"
+    name: "主動群益美國增長"
+    class: equity
+    shares: 6000
+    avg_cost: 12.0643
+    ticker_verified: false
