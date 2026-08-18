@@ -1,7 +1,7 @@
 {
   "version": 2,
   "cash": 0.0,
-  "last_run_date": null,
+  "last_run_date": "2026-08-18",
   "positions": {
     "0052": {
       "ticker": "0052",
@@ -19,7 +19,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00685L": {
       "ticker": "00685L",
@@ -37,7 +38,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00725B": {
       "ticker": "00725B",
@@ -55,7 +57,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00735": {
       "ticker": "00735",
@@ -73,7 +76,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00757": {
       "ticker": "00757",
@@ -91,7 +95,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00878": {
       "ticker": "00878",
@@ -109,7 +114,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00910": {
       "ticker": "00910",
@@ -127,7 +133,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00933B": {
       "ticker": "00933B",
@@ -145,7 +152,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00937B": {
       "ticker": "00937B",
@@ -163,7 +171,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00947": {
       "ticker": "00947",
@@ -181,7 +190,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00951": {
       "ticker": "00951",
@@ -199,7 +209,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00955": {
       "ticker": "00955",
@@ -217,7 +228,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00981A": {
       "ticker": "00981A",
@@ -235,7 +247,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "TBD1": {
       "ticker": "TBD1",
@@ -253,7 +266,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "TBD2": {
       "ticker": "TBD2",
@@ -271,7 +285,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "TBD3": {
       "ticker": "TBD3",
@@ -289,7 +304,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "TBD4": {
       "ticker": "TBD4",
@@ -307,7 +323,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "TBD5": {
       "ticker": "TBD5",
@@ -325,7 +342,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "TBD6": {
       "ticker": "TBD6",
@@ -343,7 +361,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     }
   },
   "trades": []
