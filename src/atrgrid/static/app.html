@@ -789,7 +789,7 @@ let fillCtx = {ticker: "", name: "", step: 0};
 function openFillModal(ds) {
   fillCtx = {ticker: ds.t, name: ds.n || ds.t, step: Number(ds.step) || 0};
   $("ff-label").textContent = `${fillCtx.name}（${fillCtx.ticker}）`;
-  $("ff-action").value = ds.a === "SELL" ? "SELL" : "BUY";
+  $("ff-action").value = (ds.a === "SELL" || (ds.a === "REVIEW" && Number(ds.cf) > 0)) ? "SELL" : "BUY";
   $("ff-shares").value = ds.s || "";
   $("ff-price").value = ds.p || "";
   $("ff-date").value = new Date().toISOString().slice(0, 10);
