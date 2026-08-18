@@ -222,14 +222,13 @@ def evaluate(
 
     prev_close = bars[-1].close
     gap_atr = abs(price - prev_close) / atr
-    if gap_atr > params.gap_atr_limit:
-        decision.action = REVIEW
+    is_gap = gap_atr > params.gap_atr_limit
+    if is_gap:
         decision.reasons.append(
             f"相對前收 {prev_close:.2f} 跳空 {gap_atr:.1f} 倍 ATR，超過 "
             f"{params.gap_atr_limit:g} 倍上限"
         )
         decision.blocks.append("異常跳空，請先確認是否為除息、拆分或重大事件")
-        return decision
 
     distance = price - position.anchor
     raw_rungs = int(abs(distance) // step)
@@ -305,6 +304,9 @@ def evaluate(
         decision.est_realized_pnl = float(cost.proceeds) - basis
         decision.anchor_after = position.anchor + step * rungs
         decision.rung_after = position.rung - rungs
+
+    if decision.blocks:
+        decision.action = REVIEW
 
     return decision
 

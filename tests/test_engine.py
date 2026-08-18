@@ -112,7 +112,7 @@ def test_large_gap_triggers_manual_review(holding, position, settings, state):
     # ATR ≈ 2.0，跳空 10 元 = 5 倍 ATR，超過 3 倍上限
     decision = _evaluate(holding, position, settings, state, price=90.0)
     assert decision.action == REVIEW
-    assert decision.shares == 0
+    assert decision.shares == 110
     assert any("跳空" in r for r in decision.reasons)
 
 

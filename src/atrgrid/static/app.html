@@ -544,10 +544,12 @@ function renderOrders() {
   $("orderNote").textContent =
     `${acts.length} 檔 / 共 ${state.advice.summary.orders} 筆委託`;
 
-  box.innerHTML = acts.map((d) => `
-    <div class="order ${CLS[d.action]}">
+  box.innerHTML = acts.map((d) => {
+    const displayAction = d.blocks.length ? "REVIEW" : d.action;
+    return `
+    <div class="order ${CLS[displayAction]}">
       <div class="row1">
-        <span class="badge ${CLS[d.action]}">${LABEL[d.action]}</span>
+        <span class="badge ${CLS[displayAction]}">${LABEL[displayAction]}</span>
         <span class="nm">${d.name}</span>
       </div>
       <div class="spec">${d.rungs} × ${fmt(d.lotShares)} 股</div>
@@ -563,7 +565,8 @@ function renderOrders() {
           data-a="${d.action}" data-s="${d.lotShares}" data-p="${d.price}"
           data-r="1" data-step="${d.step}">成交 1 份</button>
       </div>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 
   box.querySelectorAll(".fill").forEach((b) =>
     b.addEventListener("click", () => openFillModal(b.dataset)));
@@ -584,11 +587,20 @@ function renderRows() {
 
   $("rows").innerHTML = rows.map((h) => {
     const d = byTicker[h.ticker];
-    const action = d ? d.action : (h.verified ? "HOLD" : "SKIP");
+    const action = d ? (d.blocks.length ? "REVIEW" : d.action) : (h.verified ? "HOLD" : "SKIP");
     const why = d
       ? [...d.reasons, ...d.notes, ...d.blocks.map((b) => "✗ " + b)].join("；")
       : (h.verified ? "" : "✗ 代號尚未驗證");
     const px = state.prices[h.ticker];
+    
+    // Fallback logic for fill button
+    const fillAction = d && d.action !== "HOLD" && d.action !== "SKIP" && d.action !== "REVIEW" 
+                       ? d.action 
+                       : ((px !== undefined ? px : h.anchor) > h.anchor ? "SELL" : "BUY");
+    const fillShares = d && d.shares > 0 ? d.shares : h.lotShares;
+    const fillRungs = d && d.rungs > 0 ? d.rungs : 1;
+    const fillPrice = d && d.price ? d.price : (px !== undefined ? px : h.anchor);
+
     return `<tr>
       <td><span class="badge ${CLS[action]}">${LABEL[action]}</span></td>
       <td class="nm">${h.name}<span class="tk">${h.ticker}</span>
@@ -612,9 +624,9 @@ function renderRows() {
       <td class="n">${h.realizedPnl ? signed(h.realizedPnl) : "—"}</td>
       <td class="why">${why || "—"}</td>
       <td><button class="btn tiny fill" data-t="${h.ticker}" data-n="${h.name}"
-        data-a="${(px !== undefined ? px : h.anchor) > h.anchor ? "SELL" : "BUY"}"
-        data-s="${h.lotShares}" data-p="${px !== undefined ? px : h.anchor}"
-        data-r="1" data-step="${d ? d.step : 0}">回填</button></td>
+        data-a="${fillAction}"
+        data-s="${fillShares}" data-p="${fillPrice}"
+        data-r="${fillRungs}" data-step="${d ? d.step : 0}">回填</button></td>
     </tr>`;
   }).join("");
 
@@ -785,7 +797,7 @@ function openFillModal(ds) {
   const d = state.advice
     ? state.advice.decisions.find((x) => x.ticker === fillCtx.ticker) : null;
   const reviewNote = $("ff-note-review");
-  if (d && d.action === "REVIEW" && d.blocks.length) {
+  if (d && d.blocks.length) {
     reviewNote.hidden = false;
     reviewNote.innerHTML = "此標的目前是「複核」狀態：<br>" +
       d.blocks.map((b) => "✗ " + b).join("<br>") +
