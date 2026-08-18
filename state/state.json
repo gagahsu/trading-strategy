@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "cash": 0.0,
-  "last_run_date": null,
+  "cash": 198519.0,
+  "last_run_date": "2026-08-18",
   "positions": {
     "0052": {
       "ticker": "0052",
@@ -19,7 +19,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00685L": {
       "ticker": "00685L",
@@ -37,13 +38,14 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00725B": {
       "ticker": "00725B",
-      "shares": 6000,
-      "anchor": 34.03,
-      "rung": 0,
+      "shares": 6148,
+      "anchor": 33.84,
+      "rung": 1,
       "baseline_shares": 6000,
       "lots": [
         {
@@ -51,11 +53,18 @@
           "price": 35.058,
           "shares": 6000,
           "source": "initial"
+        },
+        {
+          "date": "2026-08-18",
+          "price": 10.0,
+          "shares": 148,
+          "source": "grid"
         }
       ],
       "realized_pnl": 0.0,
-      "last_trade_date": null,
-      "applied_ex_dividends": []
+      "last_trade_date": "2026-08-18",
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00735": {
       "ticker": "00735",
@@ -73,7 +82,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00757": {
       "ticker": "00757",
@@ -91,7 +101,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00878": {
       "ticker": "00878",
@@ -109,7 +120,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00910": {
       "ticker": "00910",
@@ -127,7 +139,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00933B": {
       "ticker": "00933B",
@@ -145,7 +158,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00937B": {
       "ticker": "00937B",
@@ -163,7 +177,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00947": {
       "ticker": "00947",
@@ -181,10 +196,11 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
-    "00951": {
-      "ticker": "00951",
+    "00954": {
+      "ticker": "00954",
       "shares": 4904,
       "anchor": 19.85,
       "rung": 0,
@@ -199,7 +215,8 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00955": {
       "ticker": "00955",
@@ -217,7 +234,46 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
+    },
+    "00965": {
+      "ticker": "00965",
+      "shares": 600,
+      "anchor": 27.26,
+      "rung": 0,
+      "baseline_shares": 600,
+      "lots": [
+        {
+          "date": "2026-08-17",
+          "price": 24.4,
+          "shares": 600,
+          "source": "initial"
+        }
+      ],
+      "realized_pnl": 0.0,
+      "last_trade_date": null,
+      "applied_ex_dividends": [],
+      "last_drift_date": null
+    },
+    "009805": {
+      "ticker": "009805",
+      "shares": 7000,
+      "anchor": 16.29,
+      "rung": 0,
+      "baseline_shares": 7000,
+      "lots": [
+        {
+          "date": "2026-08-17",
+          "price": 15.0769,
+          "shares": 7000,
+          "source": "initial"
+        }
+      ],
+      "realized_pnl": 0.0,
+      "last_trade_date": null,
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
     "00981A": {
       "ticker": "00981A",
@@ -235,46 +291,11 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
-    "TBD1": {
-      "ticker": "TBD1",
-      "shares": 600,
-      "anchor": 27.26,
-      "rung": 0,
-      "baseline_shares": 600,
-      "lots": [
-        {
-          "date": "2026-08-17",
-          "price": 24.4,
-          "shares": 600,
-          "source": "initial"
-        }
-      ],
-      "realized_pnl": 0.0,
-      "last_trade_date": null,
-      "applied_ex_dividends": []
-    },
-    "TBD2": {
-      "ticker": "TBD2",
-      "shares": 7000,
-      "anchor": 16.29,
-      "rung": 0,
-      "baseline_shares": 7000,
-      "lots": [
-        {
-          "date": "2026-08-17",
-          "price": 15.0769,
-          "shares": 7000,
-          "source": "initial"
-        }
-      ],
-      "realized_pnl": 0.0,
-      "last_trade_date": null,
-      "applied_ex_dividends": []
-    },
-    "TBD3": {
-      "ticker": "TBD3",
+    "00981D": {
+      "ticker": "00981D",
       "shares": 10000,
       "anchor": 10.45,
       "rung": 0,
@@ -289,10 +310,11 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
-    "TBD4": {
-      "ticker": "TBD4",
+    "00988A": {
+      "ticker": "00988A",
       "shares": 5000,
       "anchor": 17.69,
       "rung": 0,
@@ -307,10 +329,11 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
-    "TBD5": {
-      "ticker": "TBD5",
+    "00990A": {
+      "ticker": "00990A",
       "shares": 4000,
       "anchor": 16.72,
       "rung": 0,
@@ -325,10 +348,11 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     },
-    "TBD6": {
-      "ticker": "TBD6",
+    "00997A": {
+      "ticker": "00997A",
       "shares": 6000,
       "anchor": 11.85,
       "rung": 0,
@@ -343,8 +367,41 @@
       ],
       "realized_pnl": 0.0,
       "last_trade_date": null,
-      "applied_ex_dividends": []
+      "applied_ex_dividends": [],
+      "last_drift_date": null
+    },
+    "2330": {
+      "ticker": "2330",
+      "shares": 18,
+      "anchor": 2375.0,
+      "rung": 0,
+      "baseline_shares": 18,
+      "lots": [
+        {
+          "date": "2026-08-18",
+          "price": 2091.11,
+          "shares": 18,
+          "source": "initial"
+        }
+      ],
+      "realized_pnl": 0.0,
+      "last_trade_date": null,
+      "applied_ex_dividends": [],
+      "last_drift_date": null
     }
   },
-  "trades": []
+  "trades": [
+    {
+      "date": "2026-08-18",
+      "ticker": "00725B",
+      "action": "BUY",
+      "shares": 148,
+      "price": 10.0,
+      "fee": 1,
+      "tax": 0,
+      "rungs": 1,
+      "realized_pnl": 0.0,
+      "note": ""
+    }
+  ]
 }

@@ -237,6 +237,22 @@ footer{margin-top:3rem;padding-top:1.1rem;border-top:1px solid var(--rule);
     </div>
   </section>
 
+  <section>
+    <div class="shead">
+      <h2>交易紀錄</h2>
+      <span class="note">修改或刪除紀錄不會連動修改現有庫存與現金，如有需要請自行於設定調整。</span>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th>日期</th><th>動作</th><th>標的</th><th class="n">股數</th><th class="n">成交價</th>
+          <th class="n">階數</th><th class="n">手續費</th><th class="n">證交稅</th><th class="n">已實現</th><th>備註</th><th>操作</th>
+        </tr></thead>
+        <tbody id="tradesRows"></tbody>
+      </table>
+    </div>
+  </section>
+
   <footer id="foot">
     依既定規則計算的機械式提示，不構成投資建議。下單前請自行確認即時價格與市場狀況。
   </footer>
@@ -363,6 +379,70 @@ footer{margin-top:3rem;padding-top:1.1rem;border-top:1px solid var(--rule);
       <button type="button" class="btn" id="scan-close">關閉</button>
       <button type="button" class="btn primary" id="scan-run">開始掃描</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="editTradeModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editTradeModalTitle">
+    <h3 id="editTradeModalTitle">編輯交易紀錄</h3>
+    <form id="editTradeForm">
+      <input type="hidden" id="et-id">
+      <div class="field-row">
+        <div class="field">
+          <label for="et-date">日期</label>
+          <input id="et-date" type="date" required>
+        </div>
+        <div class="field">
+          <label for="et-ticker">標的代號</label>
+          <input id="et-ticker" required>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="et-action">方向</label>
+          <select id="et-action">
+            <option value="BUY">買進</option>
+            <option value="SELL">賣出</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="et-shares">股數</label>
+          <input id="et-shares" type="number" min="1" step="1" required>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="et-price">成交價</label>
+          <input id="et-price" type="number" min="0" step="0.0001" required>
+        </div>
+        <div class="field">
+          <label for="et-rungs">階數</label>
+          <input id="et-rungs" type="number" step="1" required>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="et-fee">手續費</label>
+          <input id="et-fee" type="number" min="0" step="1" required>
+        </div>
+        <div class="field">
+          <label for="et-tax">證交稅</label>
+          <input id="et-tax" type="number" min="0" step="1" required>
+        </div>
+      </div>
+      <div class="field">
+        <label for="et-pnl">已實現損益</label>
+        <input id="et-pnl" type="number" step="0.01" required>
+      </div>
+      <div class="field">
+        <label for="et-note">備註</label>
+        <input id="et-note">
+      </div>
+      <div class="modal-acts">
+        <button type="button" class="btn" id="et-cancel">取消</button>
+        <button type="submit" class="btn primary" id="et-submit">儲存</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -556,7 +636,64 @@ function renderRows() {
     b.addEventListener("click", () => openFillModal(b.dataset)));
 }
 
-function renderAll() { renderCards(); renderOrders(); renderRows(); }
+function renderTrades() {
+  const snap = state.snapshot;
+  if (!snap || !snap.trades) return;
+  const rows = snap.trades.slice().reverse();
+  $("tradesRows").innerHTML = rows.map((t) => `
+    <tr>
+      <td>${t.date}</td>
+      <td><span class="badge ${CLS[t.action]}">${LABEL[t.action]}</span></td>
+      <td class="nm">${t.ticker}</td>
+      <td class="n">${fmt(t.shares)}</td>
+      <td class="n">${t.price.toFixed(4)}</td>
+      <td class="n">${t.rungs}</td>
+      <td class="n">${fmt(t.fee)}</td>
+      <td class="n">${fmt(t.tax)}</td>
+      <td class="n">${t.realizedPnl ? signed(t.realizedPnl) : "—"}</td>
+      <td class="why">${t.note || ""}</td>
+      <td>
+        <button class="btn tiny et-edit" data-id="${t.id}" data-date="${t.date}" data-ticker="${t.ticker}" data-action="${t.action}" data-shares="${t.shares}" data-price="${t.price}" data-rungs="${t.rungs}" data-fee="${t.fee}" data-tax="${t.tax}" data-pnl="${t.realizedPnl}" data-note="${t.note || ""}">編輯</button>
+        <button class="btn tiny et-del" data-id="${t.id}">刪除</button>
+      </td>
+    </tr>
+  `).join("");
+
+  $("tradesRows").querySelectorAll(".et-edit").forEach(b => {
+    b.addEventListener("click", () => {
+      if (offline) return;
+      const d = b.dataset;
+      $("et-id").value = d.id;
+      $("et-date").value = d.date;
+      $("et-ticker").value = d.ticker;
+      $("et-action").value = d.action;
+      $("et-shares").value = d.shares;
+      $("et-price").value = d.price;
+      $("et-rungs").value = d.rungs;
+      $("et-fee").value = d.fee;
+      $("et-tax").value = d.tax;
+      $("et-pnl").value = d.pnl;
+      $("et-note").value = d.note;
+      $("editTradeModal").hidden = false;
+    });
+  });
+
+  $("tradesRows").querySelectorAll(".et-del").forEach(b => {
+    b.addEventListener("click", async () => {
+      if (offline) return;
+      if (!confirm("確定要刪除這筆交易紀錄嗎？\n注意：這不會連動修改庫存與現金！")) return;
+      try {
+        await api("/api/delete-trade", { id: b.dataset.id });
+        state.snapshot = await api("/api/snapshot");
+        renderAll();
+      } catch (err) {
+        banner("err", "刪除失敗", err.message);
+      }
+    });
+  });
+}
+
+function renderAll() { renderCards(); renderOrders(); renderRows(); renderTrades(); }
 
 // ── 動作 ───────────────────────────────────────────
 async function loadSnapshot() {
@@ -980,9 +1117,43 @@ document.addEventListener("keydown", (e) => {
   if (!$("fillModal").hidden) closeFillModal();
   if (!$("verifyModal").hidden) closeVerifyModal();
   if (!$("scanModal").hidden) closeScanModal();
+  if (!$("editTradeModal").hidden) $("editTradeModal").hidden = true;
 });
 $("fetch").addEventListener("click", fetchQuotes);
 $("calc").addEventListener("click", () => { clearBanners(); calc(); });
+
+$("et-cancel").addEventListener("click", () => {
+  $("editTradeModal").hidden = true;
+});
+$("editTradeForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const payload = {
+    id: $("et-id").value,
+    date: $("et-date").value,
+    ticker: $("et-ticker").value,
+    action: $("et-action").value,
+    shares: parseInt($("et-shares").value, 10),
+    price: parseFloat($("et-price").value),
+    rungs: parseInt($("et-rungs").value, 10),
+    fee: parseInt($("et-fee").value, 10),
+    tax: parseInt($("et-tax").value, 10),
+    realizedPnl: parseFloat($("et-pnl").value),
+    note: $("et-note").value,
+  };
+  try {
+    await api("/api/update-trade", payload);
+    $("editTradeModal").hidden = true;
+    banner("info", "已更新紀錄", "交易紀錄已成功更新。");
+    state.snapshot = await api("/api/snapshot");
+    renderAll();
+  } catch (err) {
+    banner("err", "更新失敗", err.message);
+  }
+});
+$("editTradeModal").addEventListener("click", (e) => {
+  if (e.target.id === "editTradeModal") $("editTradeModal").hidden = true;
+});
+
 loadSnapshot();
 })();
 </script>

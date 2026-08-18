@@ -189,6 +189,7 @@ class GridService:
             "holdings": holdings,
             "trades": [
                 {
+                    "id": i,
                     "date": t.date,
                     "ticker": t.ticker,
                     "action": t.action,
@@ -196,10 +197,12 @@ class GridService:
                     "price": t.price,
                     "fee": t.fee,
                     "tax": t.tax,
+                    "rungs": t.rungs,
                     "realizedPnl": t.realized_pnl,
+                    "note": t.note,
                 }
-                for t in state.trades[-40:]
-            ],
+                for i, t in enumerate(state.trades)
+            ][-100:],
         }
 
     def quotes(self, kind: str | None = None) -> dict[str, Any]:
@@ -587,6 +590,36 @@ class GridService:
             save_state(state, self.state_path)
         return {"ok": True, "cash": round(state.cash, 0)}
 
+    def update_trade(self, trade_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        with self.lock:
+            state = load_state(self.state_path)
+            if 0 <= trade_id < len(state.trades):
+                t = state.trades[trade_id]
+                t.date = payload.get("date", t.date)
+                t.ticker = payload.get("ticker", t.ticker)
+                t.action = payload.get("action", t.action)
+                t.shares = int(payload.get("shares", t.shares))
+                t.price = float(payload.get("price", t.price))
+                t.fee = int(payload.get("fee", t.fee))
+                t.tax = int(payload.get("tax", t.tax))
+                t.rungs = int(payload.get("rungs", t.rungs))
+                t.realized_pnl = float(payload.get("realizedPnl", t.realized_pnl))
+                t.note = payload.get("note", t.note)
+                save_state(state, self.state_path)
+            else:
+                raise ApiError("找不到該筆交易")
+        return {"ok": True}
+
+    def delete_trade(self, trade_id: int) -> dict[str, Any]:
+        with self.lock:
+            state = load_state(self.state_path)
+            if 0 <= trade_id < len(state.trades):
+                state.trades.pop(trade_id)
+                save_state(state, self.state_path)
+            else:
+                raise ApiError("找不到該筆交易")
+        return {"ok": True}
+
 
 # ------------------------------------------------------------------- HTTP
 
@@ -721,6 +754,13 @@ def make_handler(service: GridService):
                 self._dispatch(
                     lambda: service.set_cash(float(self._body().get("cash", 0)))
                 )
+            elif path == "/api/update-trade":
+                def run_update_trade():
+                    body = self._body()
+                    return service.update_trade(int(body["id"]), body)
+                self._dispatch(run_update_trade)
+            elif path == "/api/delete-trade":
+                self._dispatch(lambda: service.delete_trade(int(self._body()["id"])))
             else:
                 self._json({"error": "not found"}, 404)
 
