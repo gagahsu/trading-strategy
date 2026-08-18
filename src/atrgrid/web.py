@@ -17,7 +17,9 @@
 
 from __future__ import annotations
 
+import hmac
 import json
+import os
 import threading
 import webbrowser
 from datetime import date
@@ -46,6 +48,11 @@ from .indicators import wilder_atr
 from .state import Trade, add_position, load_state, save_state
 
 PAGE = Path(__file__).parent / "static" / "app.html"
+
+#: 部署到公網（Render 等）時務必設這個環境變數；沒設就照舊視為單機工具，
+#: 完全不擋（本機開發、pytest 都不受影響）。前端在每個 fetch 帶
+#: ``X-Auth-Token`` header，見 static/app.html 開頭的 authToken 讀取邏輯。
+AUTH_TOKEN_ENV = "ATRGRID_AUTH_TOKEN"
 
 
 class ApiError(Exception):
@@ -774,10 +781,21 @@ def make_handler(service: GridService):
             except Exception as exc:  # pragma: no cover - 最後防線
                 self._json({"error": f"伺服器錯誤：{exc}"}, 500)
 
+        # ---------------------------------------------------- 認證
+        def _authorized(self) -> bool:
+            required = os.environ.get(AUTH_TOKEN_ENV)
+            if not required:
+                return True
+            given = self.headers.get("X-Auth-Token", "")
+            return hmac.compare_digest(given, required)
+
         # ---------------------------------------------------- 路由
         def do_GET(self) -> None:  # noqa: N802
             path = self.path.split("?")[0]
             if path in ("/", "/index.html"):
+                # 頁面殼本身不含資料，允許不帶 token 也能載入 —— 資料都走
+                # /api/* 拿，那些才是真正要保護的東西。也讓瀏覽器能先顯示
+                # 「請輸入 token」的畫面，而不是連殼都出不來。
                 try:
                     body = PAGE.read_bytes()
                 except OSError:
@@ -790,12 +808,18 @@ def make_handler(service: GridService):
                 self.wfile.write(body)
                 return
             if path == "/api/snapshot":
+                if not self._authorized():
+                    self._json({"error": "unauthorized"}, 401)
+                    return
                 self._dispatch(service.snapshot)
                 return
             self._json({"error": "not found"}, 404)
 
         def do_POST(self) -> None:  # noqa: N802
             path = self.path.split("?")[0]
+            if not self._authorized():
+                self._json({"error": "unauthorized"}, 401)
+                return
             if path == "/api/quotes":
                 self._dispatch(lambda: service.quotes(self._body().get("source")))
             elif path == "/api/advise":

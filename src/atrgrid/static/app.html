@@ -522,12 +522,29 @@ let offline = false;
 const state = {snapshot:null, advice:null, prices:{}, busy:false};
 
 // ── 後端 ───────────────────────────────────────────
+// 部署到公網（如 Render）時，後端會要求 X-Auth-Token；本機 127.0.0.1/localhost
+// 不設，跳過詢問。輸入一次存進 localStorage，401 時清掉讓使用者重新整理再輸入。
+function authToken() {
+  const stored = localStorage.getItem("atrgrid_token");
+  if (stored !== null) return stored;
+  const local = ["localhost", "127.0.0.1"].includes(location.hostname);
+  const token = local ? "" : (window.prompt("輸入存取碼") || "");
+  localStorage.setItem("atrgrid_token", token);
+  return token;
+}
+
 async function api(path, body) {
-  const res = await fetch(path, body === undefined ? {} : {
+  const opts = body === undefined ? {} : {
     method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify(body),
-  });
+  };
+  opts.headers = {...(opts.headers || {}), "X-Auth-Token": authToken()};
+  const res = await fetch(path, opts);
+  if (res.status === 401) {
+    localStorage.removeItem("atrgrid_token");
+    throw new Error("存取碼錯誤，請重新整理頁面");
+  }
   const data = await res.json().catch(() => ({error: `HTTP ${res.status}`}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;

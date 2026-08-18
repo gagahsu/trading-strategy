@@ -16,3 +16,6 @@ state/*.tmp
 
 # 產出的報表
 reports/
+
+# 密鑰（DB 連線字串、部署用存取碼）
+.env

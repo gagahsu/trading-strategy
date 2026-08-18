@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from dataclasses import asdict, dataclass, field
 from datetime import date
@@ -16,6 +17,36 @@ from pathlib import Path
 from typing import Any, Iterable
 
 STATE_VERSION = 2
+
+#: 設了這個環境變數就改用 Postgres（Supabase）存狀態，不再讀寫本機檔案。
+#: 整個 State 存成一列 JSONB —— 跟本機模式一樣是整包讀寫，不拆表，
+#: 序列化邏輯（to_dict/from_dict）完全共用，只是 I/O 後端不同。
+DATABASE_URL_ENV = "ATRGRID_DATABASE_URL"
+
+
+def _pg_load(dsn: str) -> dict[str, Any] | None:
+    import psycopg
+
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute("SELECT data FROM atrgrid_state WHERE id = 1")
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
+def _pg_save(dsn: str, data: dict[str, Any]) -> None:
+    import psycopg
+    from psycopg.types.json import Jsonb
+
+    with psycopg.connect(dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO atrgrid_state (id, data, updated_at)
+            VALUES (1, %s, now())
+            ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()
+            """,
+            (Jsonb(data),),
+        )
+        conn.commit()
 
 
 @dataclass
@@ -187,6 +218,10 @@ class State:
 
 
 def load_state(path: Path | str) -> State:
+    dsn = os.environ.get(DATABASE_URL_ENV)
+    if dsn:
+        data = _pg_load(dsn)
+        return State.from_dict(data) if data else State()
     path = Path(path)
     if not path.exists():
         return State()
@@ -195,7 +230,14 @@ def load_state(path: Path | str) -> State:
 
 
 def save_state(state: State, path: Path | str) -> None:
-    """原子寫入，並保留一份 ``.bak``。狀態檔壞掉等於整套網格失憶。"""
+    """原子寫入，並保留一份 ``.bak``。狀態檔壞掉等於整套網格失憶。
+
+    設了 ``ATRGRID_DATABASE_URL`` 就改寫 Postgres，``path`` 參數整個忽略。
+    """
+    dsn = os.environ.get(DATABASE_URL_ENV)
+    if dsn:
+        _pg_save(dsn, state.to_dict())
+        return
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
