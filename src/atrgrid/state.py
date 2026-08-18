@@ -46,6 +46,10 @@ class Trade:
     rungs: int
     realized_pnl: float = 0.0
     note: str = ""
+    anchor_before: float | None = None
+    rung_before: int | None = None
+    consumed_lots: list[dict[str, Any]] | None = None
+    cash_flow: float | None = None
 
 
 @dataclass
@@ -85,14 +89,16 @@ class Position:
 
     def apply_sell(
         self, trade_date: str, price: float, shares: int, rungs: int
-    ) -> float:
-        """後進先出配對賣出，回傳毛實現損益（未扣手續費與稅）。"""
+    ) -> tuple[float, list[dict[str, Any]]]:
+        """後進先出配對賣出，回傳 (毛實現損益, 消耗的Lot紀錄)。"""
         remaining = shares
         proceeds_basis = 0.0
+        consumed_lots: list[dict[str, Any]] = []
         while remaining > 0 and self.lots:
             lot = self.lots[-1]
             take = min(lot.shares, remaining)
             proceeds_basis += lot.price * take
+            consumed_lots.append({"date": lot.date, "price": lot.price, "shares": take, "source": lot.source})
             lot.shares -= take
             remaining -= take
             if lot.shares == 0:
@@ -101,12 +107,13 @@ class Position:
             # 狀態與實際持股不一致時的保險絲：用剩餘部位的均價補齊。
             fallback = self.average_cost() or price
             proceeds_basis += fallback * remaining
+            consumed_lots.append({"date": trade_date, "price": fallback, "shares": remaining, "source": "fallback"})
         gross_pnl = price * shares - proceeds_basis
         self.shares -= shares
         self.rung -= rungs
         self.realized_pnl += gross_pnl
         self.last_trade_date = trade_date
-        return gross_pnl
+        return gross_pnl, consumed_lots
 
     def peek_sell_basis(self, shares: int) -> float:
         """試算賣出 ``shares`` 股的成本基礎，不改動狀態。"""

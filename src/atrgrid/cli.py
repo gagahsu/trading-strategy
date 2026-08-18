@@ -460,17 +460,15 @@ def cmd_record(args: argparse.Namespace) -> int:
         else:
             position.anchor = price
     else:
-        cost = sell_cost(
-            shares, price, holding.asset_class, settings.fee_discount, settings.fee_minimum
+        cost = split_sell_cost(
+            rungs, shares // max(rungs, 1), price, holding.asset_class,
+            settings.fee_discount, settings.fee_minimum,
         )
-        gross_pnl = position.apply_sell(trade_date, price, shares, rungs)
+        gross_pnl, consumed_lots = position.apply_sell(trade_date, price, shares, rungs)
         state.cash += float(cost.proceeds)
-        realized = gross_pnl - cost.fee - cost.tax
         fee, tax = cost.fee, cost.tax
-        if step:
-            position.anchor += step * rungs
-        else:
-            position.anchor = price
+        realized = gross_pnl - fee - tax
+        position.anchor = position.anchor + step * rungs if step else price
 
     state.trades.append(
         Trade(

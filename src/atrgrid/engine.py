@@ -418,7 +418,7 @@ def commit(state: State, decision: Decision, trade_date: str | None = None) -> N
         position.apply_buy(trade_date, decision.price, decision.shares, decision.rungs)
         realized = 0.0
     else:
-        gross_pnl = position.apply_sell(
+        gross_pnl, _ = position.apply_sell(
             trade_date, decision.price, decision.shares, decision.rungs
         )
         realized = gross_pnl - decision.est_fee - decision.est_tax

@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "cash": 198519.0,
+  "cash": 200000.0,
   "last_run_date": "2026-08-18",
   "positions": {
     "0052": {
@@ -43,9 +43,9 @@
     },
     "00725B": {
       "ticker": "00725B",
-      "shares": 6148,
-      "anchor": 33.84,
-      "rung": 1,
+      "shares": 6000,
+      "anchor": 34.03,
+      "rung": 0,
       "baseline_shares": 6000,
       "lots": [
         {
@@ -53,16 +53,10 @@
           "price": 35.058,
           "shares": 6000,
           "source": "initial"
-        },
-        {
-          "date": "2026-08-18",
-          "price": 10.0,
-          "shares": 148,
-          "source": "grid"
         }
       ],
       "realized_pnl": 0.0,
-      "last_trade_date": "2026-08-18",
+      "last_trade_date": null,
       "applied_ex_dividends": [],
       "last_drift_date": null
     },
@@ -390,18 +384,5 @@
       "last_drift_date": null
     }
   },
-  "trades": [
-    {
-      "date": "2026-08-18",
-      "ticker": "00725B",
-      "action": "BUY",
-      "shares": 148,
-      "price": 10.0,
-      "fee": 1,
-      "tax": 0,
-      "rungs": 1,
-      "realized_pnl": 0.0,
-      "note": ""
-    }
-  ]
+  "trades": []
 }

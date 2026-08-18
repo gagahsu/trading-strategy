@@ -25,9 +25,9 @@ def test_average_cost():
 
 
 def test_sell_matches_most_recent_lot_first():
-    """後進先出：先賣掉最近一筆 95 元的批次。"""
+    """優先消耗最後一筆 95 的批次"""
     position = make_position()
-    pnl = position.apply_sell("2026-03-10", price=100.0, shares=100, rungs=1)
+    pnl, _ = position.apply_sell("2026-03-10", price=100.0, shares=100, rungs=1)
     assert pnl == pytest.approx((100 - 95) * 100)
     assert position.shares == 200
     assert position.rung == -1
@@ -37,7 +37,7 @@ def test_sell_matches_most_recent_lot_first():
 
 def test_sell_spanning_multiple_lots():
     position = make_position()
-    pnl = position.apply_sell("2026-03-10", price=100.0, shares=150, rungs=1)
+    pnl, _ = position.apply_sell("2026-03-10", price=100.0, shares=150, rungs=1)
     # 95 元那批 100 股 + 90 元那批 50 股
     expected = (100 - 95) * 100 + (100 - 90) * 50
     assert pnl == pytest.approx(expected)
@@ -55,7 +55,7 @@ def test_peek_sell_basis_does_not_mutate():
 def test_sell_more_than_recorded_lots_falls_back_to_average():
     """狀態與券商實際庫存不同步時不該炸掉。"""
     position = Position(ticker="X", shares=100, anchor=10.0, lots=[])
-    pnl = position.apply_sell("2026-03-10", price=10.0, shares=100, rungs=1)
+    pnl, _ = position.apply_sell("2026-03-10", price=10.0, shares=100, rungs=1)
     assert pnl == pytest.approx(0.0)
     assert position.shares == 0
 

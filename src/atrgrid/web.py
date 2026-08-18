@@ -318,13 +318,19 @@ class GridService:
             rungs = int(payload.get("rungs") or max(1, round(shares / lot)))
             step = float(payload.get("step") or 0)
 
+            anchor_before = position.anchor
+            rung_before = position.rung
+            consumed_lots = None
+            cash_flow = 0.0
+
             if action == BUY:
                 cost = split_buy_cost(
                     rungs, shares // max(rungs, 1), price,
                     settings.fee_discount, settings.fee_minimum,
                 )
                 position.apply_buy(trade_date, price, shares, rungs)
-                state.cash -= float(cost.net)
+                cash_flow = -float(cost.net)
+                state.cash += cash_flow
                 fee, tax, realized = cost.fee, 0, 0.0
                 position.anchor = position.anchor - step * rungs if step else price
             else:
@@ -332,8 +338,9 @@ class GridService:
                     rungs, shares // max(rungs, 1), price, holding.asset_class,
                     settings.fee_discount, settings.fee_minimum,
                 )
-                gross_pnl = position.apply_sell(trade_date, price, shares, rungs)
-                state.cash += float(cost.proceeds)
+                gross_pnl, consumed_lots = position.apply_sell(trade_date, price, shares, rungs)
+                cash_flow = float(cost.proceeds)
+                state.cash += cash_flow
                 fee, tax = cost.fee, cost.tax
                 realized = gross_pnl - fee - tax
                 position.anchor = position.anchor + step * rungs if step else price
@@ -344,6 +351,10 @@ class GridService:
                     price=price, fee=fee, tax=tax, rungs=rungs,
                     realized_pnl=round(realized, 2),
                     note=str(payload.get("note") or ""),
+                    anchor_before=round(anchor_before, 4),
+                    rung_before=rung_before,
+                    consumed_lots=consumed_lots,
+                    cash_flow=round(cash_flow, 2),
                 )
             )
             state.last_run_date = trade_date
@@ -613,11 +624,52 @@ class GridService:
     def delete_trade(self, trade_id: int) -> dict[str, Any]:
         with self.lock:
             state = load_state(self.state_path)
-            if 0 <= trade_id < len(state.trades):
+            if not (0 <= trade_id < len(state.trades)):
+                raise ApiError("找不到該筆交易")
+                
+            trade = state.trades[trade_id]
+            ticker = trade.ticker
+            
+            # 檢查是否為該標的最後一筆交易
+            for t in state.trades[trade_id+1:]:
+                if t.ticker == ticker:
+                    raise ApiError("只能倒帶該標的的「最後一筆」交易紀錄，因為後續已有新交易發生。")
+                    
+            if trade.anchor_before is None or trade.rung_before is None or trade.cash_flow is None:
+                # 舊版紀錄，無倒帶資訊，只能單純刪除明細
                 state.trades.pop(trade_id)
                 save_state(state, self.state_path)
-            else:
-                raise ApiError("找不到該筆交易")
+                return {"ok": True, "warning": "這是一筆舊版紀錄，缺乏倒帶資訊，因此僅刪除紀錄，未連動修改庫存與現金。"}
+
+            # 執行倒帶
+            position = state.positions.get(ticker)
+            if position:
+                state.cash -= trade.cash_flow
+                position.anchor = trade.anchor_before
+                position.rung = trade.rung_before
+                
+                if trade.action == BUY:
+                    position.shares -= trade.shares
+                    # 移除買進時產生的 Lot
+                    if position.lots and position.lots[-1].date == trade.date and position.lots[-1].shares == trade.shares:
+                        position.lots.pop()
+                    else:
+                        raise ApiError("庫存 Lot 狀態與交易紀錄不符，無法自動復原")
+                else:
+                    position.shares += trade.shares
+                    position.realized_pnl -= trade.realized_pnl
+                    # 把賣出消耗的 Lot 放回
+                    from .state import Lot
+                    for c_lot in (trade.consumed_lots or []):
+                        position.lots.append(Lot(
+                            date=c_lot["date"], 
+                            price=c_lot["price"], 
+                            shares=c_lot["shares"], 
+                            source=c_lot.get("source", "grid")
+                        ))
+                        
+            state.trades.pop(trade_id)
+            save_state(state, self.state_path)
         return {"ok": True}
 
 

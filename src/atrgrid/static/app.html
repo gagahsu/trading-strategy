@@ -681,9 +681,14 @@ function renderTrades() {
   $("tradesRows").querySelectorAll(".et-del").forEach(b => {
     b.addEventListener("click", async () => {
       if (offline) return;
-      if (!confirm("確定要刪除這筆交易紀錄嗎？\n注意：這不會連動修改庫存與現金！")) return;
+      if (!confirm("確定要刪除這筆交易紀錄嗎？\n如果是該標的最新一筆交易，系統將會自動倒帶（退回現金、股數與錨點）。")) return;
       try {
-        await api("/api/delete-trade", { id: b.dataset.id });
+        const res = await api("/api/delete-trade", { id: b.dataset.id });
+        if (res.warning) {
+            banner("info", "僅刪除紀錄", res.warning);
+        } else {
+            banner("info", "已倒帶並刪除", "交易紀錄已刪除，並成功還原該標的的庫存、現金與錨點。");
+        }
         state.snapshot = await api("/api/snapshot");
         renderAll();
       } catch (err) {
