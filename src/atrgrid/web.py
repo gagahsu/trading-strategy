@@ -234,17 +234,26 @@ class GridService:
         prices: dict[str, float] | None = None,
         kind: str | None = None,
         today: str | None = None,
+        tickers: list[str] | None = None,
     ) -> dict[str, Any]:
-        """產生今日決策。``prices`` 有給就用給的，沒給的才去抓。"""
+        """產生今日決策。``prices`` 有給就用給的，沒給的才去抓。
+
+        ``tickers`` 有給就只算這些檔（給前端逐檔進度條用，見
+        static/app.html 的 calc()），不影響決策邏輯本身 —— 跟一次算全部
+        是同一套 evaluate()，只是跑的子集不同。
+        """
         settings = self.settings()
         portfolio = self.portfolio()
         state = load_state(self.state_path)
         provider = self.provider(kind)
         today = today or date.today().isoformat()
         prices = prices or {}
+        wanted = set(tickers) if tickers else None
 
         decisions: list[dict[str, Any]] = []
         for holding in portfolio.enabled():
+            if wanted is not None and holding.ticker not in wanted:
+                continue
             position = state.positions.get(holding.ticker)
             if position is None:
                 continue
@@ -831,7 +840,8 @@ def make_handler(service: GridService):
                         for k, v in raw.items()
                         if v not in (None, "", "-")
                     }
-                    return service.advise(prices, body.get("source"))
+                    tickers = body.get("tickers") or None
+                    return service.advise(prices, body.get("source"), tickers=tickers)
                 self._dispatch(run)
             elif path == "/api/record":
                 self._dispatch(lambda: service.record(self._body()))

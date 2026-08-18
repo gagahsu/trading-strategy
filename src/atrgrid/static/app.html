@@ -879,12 +879,46 @@ async function fetchQuotes() {
 }
 
 async function calc() {
+  clearBanners();
   setBusy(true, "計算中…");
   try {
-    state.advice = await api("/api/advise",
-      {prices: state.prices, source: $("src").value});
-    for (const d of state.advice.decisions)
-      if (d.price) state.prices[d.ticker] = d.price;
+    const snap = state.snapshot;
+    const tickers = snap ? snap.holdings.filter((h) => h.enabled).map((h) => h.ticker) : [];
+    const src = $("src").value;
+    // 逐檔算，不是一次全打包 —— 證交所來源一檔沒快取要抓 14 個月日 K
+    // （逐月節流 3 秒），全部塞一個 request 使用者只會看到「計算中…」
+    // 卡住，不知道到底有沒有在跑，也看不出卡在哪一檔。
+    const results = await runSequentially(tickers, (t) => t, (ticker) =>
+      api("/api/advise", {prices: state.prices, source: src, tickers: [ticker]}));
+
+    const decisions = [];
+    const bad = [];
+    let asOf = new Date().toISOString().slice(0, 10);
+    for (const r of results) {
+      if (r.ok) {
+        asOf = r.value.asOf;
+        decisions.push(...r.value.decisions);
+      } else {
+        bad.push([r.item, r.error.message]);
+      }
+    }
+    for (const d of decisions) if (d.price) state.prices[d.ticker] = d.price;
+
+    const actionable = decisions.filter((d) => d.shares > 0);
+    state.advice = {
+      asOf,
+      decisions,
+      summary: {
+        orders: actionable.reduce((s, d) => s + d.rungs, 0),
+        tickers: actionable.length,
+        netCashFlow: actionable.reduce((s, d) => s + d.cashFlow, 0),
+        cost: actionable.reduce((s, d) => s + d.fee + d.tax, 0),
+        cash: snap ? snap.cash : 0,
+      },
+    };
+    if (bad.length)
+      banner("err", `${bad.length} 檔計算失敗`,
+        bad.map(([t, e]) => `${t}：${e}`).join("；"));
     renderAll();
   } catch (err) {
     banner("err", "計算失敗", err.message);
