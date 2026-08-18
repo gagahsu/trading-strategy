@@ -147,15 +147,23 @@ def cmd_add_holding(args: argparse.Namespace) -> int:
         return 1
 
     provider = _build_provider(args)
-    try:
-        price = provider.live_price(ticker)
-    except DataError as exc:
-        if not args.fallback_to_cost:
-            print(f"{ticker} 取不到即時價：{exc}", file=sys.stderr)
-            print("（可加 --fallback-to-cost 改用 --avg-cost 建檔）", file=sys.stderr)
-            return 1
-        price = args.avg_cost
-        print(f"! {ticker} 取價失敗，改用平均成本 {price:.2f} 建檔")
+    if args.anchor_price is not None:
+        # 使用者直接指定錨點（例如實際買入價跟現在的市價不同），不用去抓即時價。
+        price = args.anchor_price
+    else:
+        try:
+            price = provider.live_price(ticker)
+        except DataError as exc:
+            if not args.fallback_to_cost:
+                print(f"{ticker} 取不到即時價：{exc}", file=sys.stderr)
+                print(
+                    "（可加 --fallback-to-cost 改用 --avg-cost 建檔，"
+                    "或用 --price 直接指定錨點）",
+                    file=sys.stderr,
+                )
+                return 1
+            price = args.avg_cost
+            print(f"! {ticker} 取價失敗，改用平均成本 {price:.2f} 建檔")
 
     add_holding(
         portfolio_path,
@@ -756,6 +764,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--shares", type=int, default=0, help="既有股數，預設 0（全新建倉）")
     p_add.add_argument("--avg-cost", dest="avg_cost", type=float, required=True)
     p_add.add_argument("--date", help="建檔日（預設今天）")
+    p_add.add_argument(
+        "--price", dest="anchor_price", type=float,
+        help="直接指定錨點價（實際買入價跟現在市價不同時用），不指定就抓即時價",
+    )
     p_add.add_argument(
         "--fallback-to-cost", action="store_true",
         help="抓不到即時價時改用 --avg-cost 建檔",

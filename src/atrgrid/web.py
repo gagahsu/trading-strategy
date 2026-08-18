@@ -357,12 +357,66 @@ class GridService:
             "tax": tax,
         }
 
+    def fetch_price(self, ticker: str, kind: str | None = None) -> dict[str, Any]:
+        """單一標的的即時價 —— 給「新增標的」表單的「抓即時價」按鈕用。"""
+        try:
+            price = self.provider(kind).live_price(ticker)
+        except DataError as exc:
+            raise ApiError(f"{ticker} 取不到即時價：{exc}") from exc
+        return {"ticker": ticker, "price": round(price, 2)}
+
+    def preview_holding(
+        self, ticker: str, asset_class: str, price: float, kind: str | None = None
+    ) -> dict[str, Any]:
+        """在還沒寫檔前，用指定價格試算 ATR/步長/一份股數。
+
+        給表單的「試算」按鈕用：使用者輸入的買入價可能跟即時價不同，步長跟一份
+        股數都是價格的函數（見 engine.grid_step、fees.lot_size），這裡必須重算，
+        不能沿用抓即時價當下算好的數字。
+        """
+        if asset_class not in VALID_CLASSES:
+            raise ApiError(f"assetClass 必須是 {sorted(VALID_CLASSES)} 之一")
+        if price <= 0:
+            raise ApiError("price 必須 > 0")
+
+        settings = self.settings()
+        params = settings.params_for(asset_class)
+        result: dict[str, Any] = {
+            "lotShares": lot_size(price, settings),
+            "lotValue": round(lot_size(price, settings) * price, 0),
+        }
+        try:
+            bars = self.provider(kind).daily_bars(ticker, months=self.months)
+        except DataError as exc:
+            result["warning"] = f"抓不到日 K：{exc}"
+            return result
+        atr = wilder_atr(bars, params.atr_period)
+        if atr is None:
+            result["warning"] = (
+                f"日 K 只有 {len(bars)} 根，不足 {params.atr_period + 1} 根算不出 ATR"
+            )
+            return result
+        step = grid_step(price, atr, params)
+        result.update(
+            {
+                "atr": round(atr, 3),
+                "atrPct": round(atr / price * 100, 2),
+                "step": round(step, 3),
+                "stepPct": round(step / price * 100, 2),
+            }
+        )
+        return result
+
     def add_holding(self, payload: dict[str, Any]) -> dict[str, Any]:
         """新增一檔標的：寫入 portfolio.yaml、建 state.json 部位，順便算 ATR/步長。
 
         跟 CLI 的 ``atrgrid add-holding`` 是同一套邏輯（見 cli.cmd_add_holding），
         ticker_verified 一律先寫 false —— 未經 verify-tickers 核對前不產生
         下單建議，這是 engine.evaluate 的硬性閘門，網頁這條路徑不能繞過去。
+
+        ``price`` 是建檔錨點，直接用表單填的（可能是抓來的即時價，也可能是
+        使用者自己輸入的實際買入價）——不在這裡重新抓一次，抓到的跟表單顯示
+        的兜不起來會很難除錯。
         """
         ticker = str(payload.get("ticker", "")).strip()
         name = str(payload.get("name", "")).strip()
@@ -376,24 +430,21 @@ class GridService:
         try:
             shares = int(payload.get("shares") or 0)
             avg_cost = float(payload["avgCost"])
+            price = float(payload["price"])
         except (KeyError, TypeError, ValueError) as exc:
-            raise ApiError(f"shares 與 avgCost 必須是數字：{exc}") from exc
+            raise ApiError(f"shares／avgCost／price 必須是數字：{exc}") from exc
         if shares < 0:
             raise ApiError("shares 不可為負")
         if avg_cost <= 0:
             raise ApiError("avgCost 必須 > 0")
+        if price <= 0:
+            raise ApiError("price 必須 > 0")
 
         with self.lock:
             portfolio_path = self.config_dir / "portfolio.yaml"
             portfolio = self.portfolio()
             if any(h.ticker == ticker for h in portfolio.holdings):
                 raise ApiError(f"{ticker} 已經在 portfolio.yaml 中")
-
-            provider = self.provider(payload.get("source"))
-            try:
-                price = provider.live_price(ticker)
-            except DataError as exc:
-                raise ApiError(f"{ticker} 取不到即時價：{exc}") from exc
 
             try:
                 add_holding(
@@ -414,33 +465,9 @@ class GridService:
                 "anchor": round(position.anchor, 3),
                 "shares": position.shares,
             }
-            try:
-                bars = provider.daily_bars(ticker, months=self.months)
-            except DataError as exc:
-                result["warning"] = f"已新增，但抓不到日 K 算 ATR：{exc}"
-                return result
 
-            settings = self.settings()
-            params = resolve_params(settings, holding)
-            atr = wilder_atr(bars, params.atr_period)
-            if atr is None:
-                result["warning"] = (
-                    f"已新增，但日 K 只有 {len(bars)} 根，"
-                    f"不足 {params.atr_period + 1} 根算不出 ATR"
-                )
-                return result
-
-            step = grid_step(price, atr, params)
-            result.update(
-                {
-                    "atr": round(atr, 3),
-                    "atrPct": round(atr / price * 100, 2),
-                    "step": round(step, 3),
-                    "stepPct": round(step / price * 100, 2),
-                    "lotShares": lot_size(price, settings),
-                }
-            )
-            return result
+        result.update(self.preview_holding(ticker, asset_class, price, payload.get("source")))
+        return result
 
     def dividend_suggestions(self, ticker: str, kind: str | None = None) -> dict[str, Any]:
         """從行情來源抓股利事件，扣掉已登記的，回傳新發現的（唯讀，不寫檔）。"""
@@ -570,6 +597,28 @@ def make_handler(service: GridService):
                 self._dispatch(lambda: service.record(self._body()))
             elif path == "/api/add-holding":
                 self._dispatch(lambda: service.add_holding(self._body()))
+            elif path == "/api/quote":
+                def run_quote():
+                    body = self._body()
+                    ticker = str(body.get("ticker", "")).strip()
+                    if not ticker:
+                        raise ApiError("ticker 必填")
+                    return service.fetch_price(ticker, body.get("source"))
+                self._dispatch(run_quote)
+            elif path == "/api/preview-holding":
+                def run_preview():
+                    body = self._body()
+                    ticker = str(body.get("ticker", "")).strip()
+                    if not ticker:
+                        raise ApiError("ticker 必填")
+                    try:
+                        price = float(body.get("price"))
+                    except (TypeError, ValueError) as exc:
+                        raise ApiError(f"price 必須是數字：{exc}") from exc
+                    return service.preview_holding(
+                        ticker, str(body.get("assetClass", "")), price, body.get("source")
+                    )
+                self._dispatch(run_preview)
             elif path == "/api/ex-dividend":
                 self._dispatch(lambda: service.ex_dividend(self._body()))
             elif path == "/api/dividend-suggestions":

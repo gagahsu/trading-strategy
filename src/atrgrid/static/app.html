@@ -156,6 +156,28 @@ input.px.stale{color:var(--muted)}
 
 .muted{color:var(--muted)}
 .empty{padding:2rem 1rem;text-align:center;color:var(--muted);font-size:.88rem}
+
+/* ── 表單彈窗 ─────────────────────────────────────── */
+.modal-overlay{position:fixed;inset:0;background:rgba(20,18,14,.42);
+  display:flex;align-items:center;justify-content:center;z-index:50;padding:1rem}
+.modal-overlay[hidden]{display:none}
+.modal{background:var(--panel);border:1px solid var(--rule);border-radius:10px;
+  box-shadow:var(--shadow);padding:1.15rem 1.3rem;max-width:420px;width:100%;
+  max-height:90vh;overflow-y:auto}
+.modal h3{font-family:var(--serif);font-size:1.08rem;margin:0 0 .9rem}
+.field{margin-bottom:.7rem}
+.field label{display:block;font-size:.76rem;color:var(--muted);margin-bottom:.28rem}
+.field input,.field select{width:100%;font:inherit;color:inherit;background:var(--sunk);
+  border:1px solid transparent;border-radius:6px;padding:.42rem .55rem}
+.field input:focus,.field select:focus{background:var(--panel);border-color:var(--brass);
+  outline:none}
+.field-row{display:flex;gap:.5rem;align-items:flex-end}
+.field-row .field{flex:1;margin-bottom:0}
+.preview{background:var(--sunk);border-radius:6px;padding:.55rem .7rem;
+  font-family:var(--mono);font-size:.76rem;margin:.7rem 0;color:var(--muted);
+  line-height:1.7}
+.preview b{color:var(--ink);font-weight:600}
+.modal-acts{display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem}
 footer{margin-top:3rem;padding-top:1.1rem;border-top:1px solid var(--rule);
   font-size:.76rem;color:var(--muted)}
 @media (max-width:640px){
@@ -216,6 +238,57 @@ footer{margin-top:3rem;padding-top:1.1rem;border-top:1px solid var(--rule);
   <footer id="foot">
     依既定規則計算的機械式提示，不構成投資建議。下單前請自行確認即時價格與市場狀況。
   </footer>
+</div>
+
+<div class="modal-overlay" id="addModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addModalTitle">
+    <h3 id="addModalTitle">新增標的</h3>
+    <form id="addForm">
+      <div class="field">
+        <label for="af-ticker">代號</label>
+        <input id="af-ticker" required placeholder="例如 0056" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="af-name">中文名稱</label>
+        <input id="af-name" required placeholder="例如 元大高股息" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="af-class">資產類別</label>
+        <select id="af-class">
+          <option value="equity">股票型</option>
+          <option value="bond">債券型（免證交稅）</option>
+          <option value="leveraged">槓桿型</option>
+        </select>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="af-shares">既有股數</label>
+          <input id="af-shares" type="number" min="0" step="1" value="0">
+        </div>
+        <div class="field">
+          <label for="af-avgcost">平均成本（每股）</label>
+          <input id="af-avgcost" type="number" min="0" step="0.0001">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="af-price">買入／參考價格</label>
+          <input id="af-price" type="number" min="0" step="0.01"
+            placeholder="可能跟即時價不同，直接輸入">
+        </div>
+        <button type="button" class="btn tiny" id="af-quote">抓即時價</button>
+      </div>
+      <div class="preview" id="af-preview">
+        填好代號與價格後按「試算」，看 ATR／步長／一份股數
+        （價格不同，步長跟一份股數都會不一樣，重新輸入要重新試算）。
+      </div>
+      <div class="modal-acts">
+        <button type="button" class="btn tiny" id="af-calc">試算</button>
+        <button type="button" class="btn" id="af-cancel">取消</button>
+        <button type="submit" class="btn primary" id="af-submit">新增</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <script id="embedded" type="application/json">null</script>
@@ -541,39 +614,95 @@ async function recordExDividend(ds) {
   }
 }
 
-async function addHolding() {
-  const ticker = prompt("新標的代號？（例如 0056）");
-  if (!ticker) return;
-  const name = prompt("中文名稱？");
-  if (!name) return;
-  const cls = prompt("資產類別？equity / bond / leveraged", "equity");
-  if (!cls || !["equity", "bond", "leveraged"].includes(cls)) {
-    banner("err", "新增失敗", "資產類別必須是 equity / bond / leveraged。");
+const CLASS_LABEL = {equity: "股票型", bond: "債券型（免證交稅）", leveraged: "槓桿型"};
+
+function openAddModal() {
+  $("addForm").reset();
+  $("af-shares").value = "0";
+  $("af-preview").innerHTML =
+    "填好代號與價格後按「試算」，看 ATR／步長／一份股數" +
+    "（價格不同，步長跟一份股數都會不一樣，重新輸入要重新試算）。";
+  $("addModal").hidden = false;
+  $("af-ticker").focus();
+}
+
+function closeAddModal() { $("addModal").hidden = true; }
+
+async function quoteForAdd() {
+  const ticker = $("af-ticker").value.trim();
+  if (!ticker) { banner("err", "抓即時價失敗", "請先填代號。"); return; }
+  $("af-quote").disabled = true;
+  try {
+    const res = await api("/api/quote", {ticker, source: $("src").value});
+    $("af-price").value = res.price;
+  } catch (err) {
+    banner("err", "抓即時價失敗", err.message);
+  } finally {
+    $("af-quote").disabled = false;
+  }
+}
+
+async function previewForAdd() {
+  const ticker = $("af-ticker").value.trim();
+  const cls = $("af-class").value;
+  const price = parseFloat($("af-price").value);
+  if (!ticker) { banner("err", "試算失敗", "請先填代號。"); return; }
+  if (!Number.isFinite(price) || price <= 0) {
+    banner("err", "試算失敗", "請先填買入／參考價格（或按「抓即時價」）。");
     return;
   }
-  const sharesStr = prompt("目前持股股數？（全新建倉輸入 0）", "0");
-  if (sharesStr === null) return;
-  const shares = parseInt(sharesStr, 10);
-  const avgCostStr = prompt("平均成本（每股）？");
-  if (!avgCostStr) return;
-  const avgCost = parseFloat(avgCostStr);
-  if (!Number.isInteger(shares) || shares < 0
-      || !Number.isFinite(avgCost) || avgCost <= 0) {
-    banner("err", "新增失敗", "股數與平均成本必須是有效數字。");
+  $("af-calc").disabled = true;
+  $("af-preview").textContent = "試算中…";
+  try {
+    const res = await api("/api/preview-holding",
+      {ticker, assetClass: cls, price, source: $("src").value});
+    if (res.warning) {
+      $("af-preview").textContent = res.warning;
+    } else {
+      $("af-preview").innerHTML =
+        `ATR(${res.atr})　<b>${res.atrPct}%</b>　步長 ${res.step}（<b>${res.stepPct}%</b>）<br>` +
+        `一份 <b>${fmt(res.lotShares)}</b> 股（約 ${fmt(res.lotValue)} 元）＠ ${price}`;
+    }
+  } catch (err) {
+    $("af-preview").textContent = "試算失敗：" + err.message;
+  } finally {
+    $("af-calc").disabled = false;
+  }
+}
+
+async function submitAdd(evt) {
+  evt.preventDefault();
+  const ticker = $("af-ticker").value.trim();
+  const name = $("af-name").value.trim();
+  const assetClass = $("af-class").value;
+  const shares = parseInt($("af-shares").value, 10);
+  const avgCost = parseFloat($("af-avgcost").value);
+  const price = parseFloat($("af-price").value);
+  if (!ticker || !name) {
+    banner("err", "新增失敗", "代號與名稱必填。"); return;
+  }
+  if (!Number.isInteger(shares) || shares < 0) {
+    banner("err", "新增失敗", "既有股數必須是 0 或正整數。"); return;
+  }
+  if (!Number.isFinite(avgCost) || avgCost <= 0) {
+    banner("err", "新增失敗", "平均成本必須是大於 0 的數字。"); return;
+  }
+  if (!Number.isFinite(price) || price <= 0) {
+    banner("err", "新增失敗", "買入／參考價格必須是大於 0 的數字（可按「抓即時價」帶入）。");
     return;
   }
-  setBusy(true, "新增中…");
+  $("af-submit").disabled = true;
   try {
     const res = await api("/api/add-holding", {
-      ticker: ticker.trim(), name: name.trim(), assetClass: cls,
-      shares, avgCost, source: $("src").value,
+      ticker, name, assetClass, shares, avgCost, price, source: $("src").value,
     });
+    closeAddModal();
     if (res.warning) {
-      banner("info", "已新增", res.warning);
+      banner("info", "已新增", `${ticker}（${CLASS_LABEL[assetClass]}）：${res.warning}`);
     } else {
       banner("info", "已新增",
-        `${ticker} 錨點 ${res.anchor}，ATR(${res.atrPct}%)　`
-        + `步長 ${res.step}（${res.stepPct}%）　一份 ${res.lotShares} 股。`
+        `${ticker}（${CLASS_LABEL[assetClass]}）錨點 ${res.anchor}，`
+        + `ATR ${res.atrPct}%　步長 ${res.stepPct}%　一份 ${fmt(res.lotShares)} 股。`
         + `記得跑 atrgrid verify-tickers 核對後把 ticker_verified 改成 true。`);
     }
     state.snapshot = await api("/api/snapshot");
@@ -581,11 +710,19 @@ async function addHolding() {
   } catch (err) {
     banner("err", "新增失敗", err.message);
   } finally {
-    setBusy(false);
+    $("af-submit").disabled = false;
   }
 }
 
-$("addHolding").addEventListener("click", addHolding);
+$("addHolding").addEventListener("click", openAddModal);
+$("af-cancel").addEventListener("click", closeAddModal);
+$("af-quote").addEventListener("click", quoteForAdd);
+$("af-calc").addEventListener("click", previewForAdd);
+$("addForm").addEventListener("submit", submitAdd);
+$("addModal").addEventListener("click", (e) => { if (e.target.id === "addModal") closeAddModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("addModal").hidden) closeAddModal();
+});
 $("fetch").addEventListener("click", fetchQuotes);
 $("calc").addEventListener("click", () => { clearBanners(); calc(); });
 loadSnapshot();
