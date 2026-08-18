@@ -25,11 +25,22 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .config import Portfolio, Settings, load_portfolio, load_settings, resolve_params
+from .config import (
+    VALID_CLASSES,
+    ConfigError,
+    Portfolio,
+    Settings,
+    add_ex_dividend,
+    add_holding,
+    load_portfolio,
+    load_settings,
+    resolve_params,
+)
 from .data import DataError, PriceProvider, make_provider
-from .engine import BUY, SELL, Decision, evaluate, lot_size, next_grid_levels
+from .engine import BUY, SELL, Decision, evaluate, grid_step, lot_size, next_grid_levels
 from .fees import split_buy_cost, split_sell_cost
-from .state import Trade, load_state, save_state
+from .indicators import wilder_atr
+from .state import Trade, add_position, load_state, save_state
 
 PAGE = Path(__file__).parent / "static" / "app.html"
 
@@ -161,6 +172,7 @@ class GridService:
                     "maxSellRungs": params.max_sell_rungs,
                     "nextBuy": [round(p, 2) for p in buys],
                     "nextSell": [round(p, 2) for p in sells],
+                    "exDividends": holding.ex_dividends,
                 }
             )
 
@@ -345,6 +357,130 @@ class GridService:
             "tax": tax,
         }
 
+    def add_holding(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """新增一檔標的：寫入 portfolio.yaml、建 state.json 部位，順便算 ATR/步長。
+
+        跟 CLI 的 ``atrgrid add-holding`` 是同一套邏輯（見 cli.cmd_add_holding），
+        ticker_verified 一律先寫 false —— 未經 verify-tickers 核對前不產生
+        下單建議，這是 engine.evaluate 的硬性閘門，網頁這條路徑不能繞過去。
+        """
+        ticker = str(payload.get("ticker", "")).strip()
+        name = str(payload.get("name", "")).strip()
+        asset_class = str(payload.get("assetClass", "")).strip()
+        if not ticker:
+            raise ApiError("ticker 必填")
+        if not name:
+            raise ApiError("name 必填")
+        if asset_class not in VALID_CLASSES:
+            raise ApiError(f"assetClass 必須是 {sorted(VALID_CLASSES)} 之一")
+        try:
+            shares = int(payload.get("shares") or 0)
+            avg_cost = float(payload["avgCost"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ApiError(f"shares 與 avgCost 必須是數字：{exc}") from exc
+        if shares < 0:
+            raise ApiError("shares 不可為負")
+        if avg_cost <= 0:
+            raise ApiError("avgCost 必須 > 0")
+
+        with self.lock:
+            portfolio_path = self.config_dir / "portfolio.yaml"
+            portfolio = self.portfolio()
+            if any(h.ticker == ticker for h in portfolio.holdings):
+                raise ApiError(f"{ticker} 已經在 portfolio.yaml 中")
+
+            provider = self.provider(payload.get("source"))
+            try:
+                price = provider.live_price(ticker)
+            except DataError as exc:
+                raise ApiError(f"{ticker} 取不到即時價：{exc}") from exc
+
+            try:
+                add_holding(
+                    portfolio_path, ticker=ticker, name=name,
+                    asset_class=asset_class, shares=shares, avg_cost=avg_cost,
+                )
+            except ConfigError as exc:
+                raise ApiError(str(exc)) from exc
+
+            holding = self.portfolio().by_ticker(ticker)
+            state = load_state(self.state_path)
+            position = add_position(state, holding, price, as_of=date.today().isoformat())
+            save_state(state, self.state_path)
+
+            result: dict[str, Any] = {
+                "ok": True,
+                "ticker": ticker,
+                "anchor": round(position.anchor, 3),
+                "shares": position.shares,
+            }
+            try:
+                bars = provider.daily_bars(ticker, months=self.months)
+            except DataError as exc:
+                result["warning"] = f"已新增，但抓不到日 K 算 ATR：{exc}"
+                return result
+
+            settings = self.settings()
+            params = resolve_params(settings, holding)
+            atr = wilder_atr(bars, params.atr_period)
+            if atr is None:
+                result["warning"] = (
+                    f"已新增，但日 K 只有 {len(bars)} 根，"
+                    f"不足 {params.atr_period + 1} 根算不出 ATR"
+                )
+                return result
+
+            step = grid_step(price, atr, params)
+            result.update(
+                {
+                    "atr": round(atr, 3),
+                    "atrPct": round(atr / price * 100, 2),
+                    "step": round(step, 3),
+                    "stepPct": round(step / price * 100, 2),
+                    "lotShares": lot_size(price, settings),
+                }
+            )
+            return result
+
+    def dividend_suggestions(self, ticker: str, kind: str | None = None) -> dict[str, Any]:
+        """從行情來源抓股利事件，扣掉已登記的，回傳新發現的（唯讀，不寫檔）。"""
+        try:
+            holding = self.portfolio().by_ticker(ticker)
+        except KeyError as exc:
+            raise ApiError(f"{ticker} 不在持股清單中", 404) from exc
+        known = {str(e.get("date")) for e in holding.ex_dividends}
+        try:
+            events = self.provider(kind).dividends(ticker)
+        except DataError as exc:
+            raise ApiError(str(exc)) from exc
+        return {"ticker": ticker, "new": [e for e in events if e["date"] not in known]}
+
+    def ex_dividend(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """登記一筆除息到 portfolio.yaml（不動 state.json 的錨點——那是下次
+        evaluate() 才會做的事，見 engine.apply_ex_dividends）。"""
+        ticker = str(payload.get("ticker", "")).strip()
+        ex_date = str(payload.get("date", "")).strip()
+        try:
+            amount = float(payload["amount"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ApiError(f"amount 必須是數字：{exc}") from exc
+
+        portfolio_path = self.config_dir / "portfolio.yaml"
+        with self.lock:
+            try:
+                add_ex_dividend(portfolio_path, ticker, ex_date, amount)
+            except KeyError as exc:
+                raise ApiError(f"{ticker} 不在持股清單中", 404) from exc
+            except ConfigError as exc:
+                raise ApiError(str(exc)) from exc
+            holding = self.portfolio().by_ticker(ticker)
+
+        return {
+            "ok": True,
+            "ticker": ticker,
+            "exDividends": holding.ex_dividends,
+        }
+
     def set_cash(self, amount: float) -> dict[str, Any]:
         with self.lock:
             state = load_state(self.state_path)
@@ -432,6 +568,18 @@ def make_handler(service: GridService):
                 self._dispatch(run)
             elif path == "/api/record":
                 self._dispatch(lambda: service.record(self._body()))
+            elif path == "/api/add-holding":
+                self._dispatch(lambda: service.add_holding(self._body()))
+            elif path == "/api/ex-dividend":
+                self._dispatch(lambda: service.ex_dividend(self._body()))
+            elif path == "/api/dividend-suggestions":
+                def run_div():
+                    body = self._body()
+                    ticker = str(body.get("ticker", "")).strip()
+                    if not ticker:
+                        raise ApiError("ticker 必填")
+                    return service.dividend_suggestions(ticker, body.get("source"))
+                self._dispatch(run_div)
             elif path == "/api/cash":
                 self._dispatch(
                     lambda: service.set_cash(float(self._body().get("cash", 0)))

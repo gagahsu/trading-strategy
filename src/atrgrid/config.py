@@ -9,7 +9,9 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field, replace
+from datetime import date as _date
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -237,6 +239,119 @@ def load_portfolio(path: Path | str) -> Portfolio:
         holding.validate()
         holdings.append(holding)
     return Portfolio(holdings)
+
+
+def add_holding(
+    path: Path | str,
+    ticker: str,
+    name: str,
+    asset_class: str,
+    shares: int,
+    avg_cost: float,
+) -> None:
+    """在 portfolio.yaml 尾端加一檔新持股（就地改檔，保留既有排版與註解）。
+
+    新增的一律 ``ticker_verified: false`` —— 跟手動新增的規矩一樣，未經
+    :func:`atrgrid verify-tickers` 核對前不產生任何下單建議（見 engine.evaluate
+    的硬性閘門）。同樣的文字手術手法見 :func:`add_ex_dividend` 的說明。
+    """
+    ticker = ticker.strip()
+    if not ticker:
+        raise ConfigError("ticker 不可為空")
+    if asset_class not in VALID_CLASSES:
+        raise ConfigError(f"class 必須是 {sorted(VALID_CLASSES)} 之一")
+    if shares < 0:
+        raise ConfigError("shares 不可為負")
+    if avg_cost <= 0:
+        raise ConfigError("avg_cost 必須 > 0")
+
+    portfolio = load_portfolio(path)
+    if any(h.ticker == ticker for h in portfolio.holdings):
+        raise ConfigError(f"{ticker} 已存在於 portfolio.yaml")
+
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
+    if not text.endswith("\n"):
+        text += "\n"
+    name = name.strip() or ticker
+    block = (
+        f'\n  - ticker: "{ticker}"\n'
+        f'    name: "{name}"\n'
+        f"    class: {asset_class}\n"
+        f"    shares: {shares}\n"
+        f"    avg_cost: {avg_cost}\n"
+        f"    ticker_verified: false\n"
+    )
+    path.write_text(text + block, encoding="utf-8")
+    load_portfolio(path)  # 寫完立刻重讀驗證，寫壞了馬上知道
+
+
+_TICKER_LINE = re.compile(r'^(\s*)-\s*ticker:\s*["\']?([^"\'\s]+)["\']?\s*$')
+
+
+def add_ex_dividend(
+    path: Path | str, ticker: str, ex_date: str, amount: float
+) -> None:
+    """在 portfolio.yaml 該檔持股下登記一筆除息（就地改檔，保留註解與排版）。
+
+    用文字手術而非 yaml.safe_load → yaml.dump 整檔重寫，因為 portfolio.yaml
+    是手工維護、夾雜大量提醒註解的檔案，整檔重寫會把註解全部沖掉。
+    """
+    try:
+        _date.fromisoformat(ex_date)
+    except ValueError as exc:
+        raise ConfigError(f"日期格式錯誤，需要 YYYY-MM-DD：{ex_date}") from exc
+    if amount <= 0:
+        raise ConfigError("除息金額必須 > 0")
+
+    portfolio = load_portfolio(path)
+    holding = portfolio.by_ticker(ticker)  # 先確認代號存在，KeyError 交給呼叫端處理
+    if any(str(e.get("date")) == ex_date for e in holding.ex_dividends):
+        raise ConfigError(f"{ticker} 已登記過 {ex_date} 的除息")
+
+    path = Path(path)
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+
+    start = None
+    indent = ""
+    for i, line in enumerate(lines):
+        m = _TICKER_LINE.match(line)
+        if m and m.group(2) == ticker:
+            start = i
+            indent = m.group(1)
+            break
+    if start is None:
+        raise ConfigError(f"{ticker} 不在 {path} 中")
+
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        if _TICKER_LINE.match(lines[j]):
+            end = j
+            break
+
+    field_indent = indent + "  "
+    entry_indent = field_indent + "  "
+    new_entry = f'{entry_indent}- {{ date: "{ex_date}", amount: {amount} }}\n'
+
+    block = lines[start:end]
+    ex_key = re.compile(r"^\s*ex_dividends:\s*$")
+    ex_line_idx = next(
+        (k for k, line in enumerate(block) if ex_key.match(line)), None
+    )
+    if ex_line_idx is not None:
+        insert_at = ex_line_idx + 1
+        while insert_at < len(block) and block[insert_at].lstrip().startswith("- "):
+            insert_at += 1
+        block.insert(insert_at, new_entry)
+    else:
+        trim = len(block)
+        while trim > 0 and block[trim - 1].strip() == "":
+            trim -= 1
+        block[trim:trim] = [f"{field_indent}ex_dividends:\n", new_entry]
+
+    lines[start:end] = block
+    path.write_text("".join(lines), encoding="utf-8")
+    load_portfolio(path)  # 寫完立刻重讀驗證，寫壞了馬上知道
 
 
 def resolve_params(settings: Settings, holding: Holding) -> GridParams:

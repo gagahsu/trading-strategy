@@ -180,6 +180,7 @@ footer{margin-top:3rem;padding-top:1.1rem;border-top:1px solid var(--rule);
   </select>
   <button class="btn" id="fetch">抓取報價</button>
   <button class="btn primary" id="calc">重新計算</button>
+  <button class="btn" id="addHolding">+ 新增標的</button>
 </div></div>
 
 <div class="wrap">
@@ -265,7 +266,7 @@ function clearBanners() { $("banners").textContent = ""; }
 
 function setBusy(on, label) {
   state.busy = on;
-  for (const id of ["fetch", "calc", "src"]) $(id).disabled = on;
+  for (const id of ["fetch", "calc", "src", "addHolding"]) $(id).disabled = on;
   if (label) $("calc").textContent = label;
   else $("calc").textContent = "重新計算";
 }
@@ -362,7 +363,12 @@ function renderRows() {
     const px = state.prices[h.ticker];
     return `<tr>
       <td><span class="badge ${CLS[action]}">${LABEL[action]}</span></td>
-      <td class="nm">${h.name}<span class="tk">${h.ticker}</span></td>
+      <td class="nm">${h.name}<span class="tk">${h.ticker}</span>
+        <button class="btn tiny exdiv" data-t="${h.ticker}" data-n="${h.name}"
+          title="${h.exDividends && h.exDividends.length
+            ? '已登記：' + h.exDividends.map((e) => `${e.date} ${e.amount}`).join('；')
+            : '尚未登記除息'}">除息${h.exDividends && h.exDividends.length
+            ? ` (${h.exDividends.length})` : ""}</button></td>
       <td class="n"><input class="px${px ? "" : " stale"}" type="number"
         step="0.01" min="0" inputmode="decimal" data-t="${h.ticker}"
         value="${px !== undefined ? px : ""}" placeholder="—"
@@ -391,6 +397,9 @@ function renderRows() {
       if (e.key === "Enter") { inp.blur(); calc(); }
     });
   });
+
+  $("rows").querySelectorAll(".exdiv").forEach((b) =>
+    b.addEventListener("click", () => recordExDividend(b.dataset)));
 }
 
 function renderAll() { renderCards(); renderOrders(); renderRows(); }
@@ -416,7 +425,7 @@ async function loadSnapshot() {
   }
   const snap = state.snapshot;
   $("src").value = snap.providerKind || "auto";
-  if (offline) for (const id of ["fetch", "calc", "src"]) $(id).disabled = true;
+  if (offline) for (const id of ["fetch", "calc", "src", "addHolding"]) $(id).disabled = true;
 
   if (snap.unverified > 0)
     banner("info", "代號尚未驗證",
@@ -489,6 +498,94 @@ async function recordFill(ds) {
   }
 }
 
+async function recordExDividend(ds) {
+  if (offline) return;
+  let suggestDate = new Date().toISOString().slice(0, 10);
+  let suggestAmount = "";
+  try {
+    const sug = await api("/api/dividend-suggestions",
+      {ticker: ds.t, source: $("src").value});
+    if (sug.new && sug.new.length) {
+      const pick = sug.new[sug.new.length - 1];
+      suggestDate = pick.date;
+      suggestAmount = String(pick.amount);
+      if (sug.new.length > 1)
+        banner("info", "抓到多筆除息事件",
+          `${ds.t} 來源有 ${sug.new.length} 筆尚未登記，先帶入最新一筆，`
+          + `其餘請重複點「除息」逐筆登記。`);
+    }
+  } catch (err) {
+    // 抓不到來源資料就退回手動輸入，不擋流程。
+  }
+  const exDate = prompt(`${ds.n}（${ds.t}）除息日？（YYYY-MM-DD）`, suggestDate);
+  if (!exDate) return;
+  const amountStr = prompt(`${ds.n} 每股配息金額？`, suggestAmount);
+  if (!amountStr) return;
+  const amount = parseFloat(amountStr);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    banner("err", "登記失敗", "配息金額必須是大於 0 的數字。");
+    return;
+  }
+  setBusy(true, "登記中…");
+  try {
+    await api("/api/ex-dividend", {ticker: ds.t, date: exDate, amount});
+    banner("info", "已登記除息",
+      `${ds.t} ${exDate} 配息 ${amount} 元，已寫入 portfolio.yaml，`
+      + `下次計算時會自動調整錨點。`);
+    state.snapshot = await api("/api/snapshot");
+    renderAll();
+  } catch (err) {
+    banner("err", "登記失敗", err.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function addHolding() {
+  const ticker = prompt("新標的代號？（例如 0056）");
+  if (!ticker) return;
+  const name = prompt("中文名稱？");
+  if (!name) return;
+  const cls = prompt("資產類別？equity / bond / leveraged", "equity");
+  if (!cls || !["equity", "bond", "leveraged"].includes(cls)) {
+    banner("err", "新增失敗", "資產類別必須是 equity / bond / leveraged。");
+    return;
+  }
+  const sharesStr = prompt("目前持股股數？（全新建倉輸入 0）", "0");
+  if (sharesStr === null) return;
+  const shares = parseInt(sharesStr, 10);
+  const avgCostStr = prompt("平均成本（每股）？");
+  if (!avgCostStr) return;
+  const avgCost = parseFloat(avgCostStr);
+  if (!Number.isInteger(shares) || shares < 0
+      || !Number.isFinite(avgCost) || avgCost <= 0) {
+    banner("err", "新增失敗", "股數與平均成本必須是有效數字。");
+    return;
+  }
+  setBusy(true, "新增中…");
+  try {
+    const res = await api("/api/add-holding", {
+      ticker: ticker.trim(), name: name.trim(), assetClass: cls,
+      shares, avgCost, source: $("src").value,
+    });
+    if (res.warning) {
+      banner("info", "已新增", res.warning);
+    } else {
+      banner("info", "已新增",
+        `${ticker} 錨點 ${res.anchor}，ATR(${res.atrPct}%)　`
+        + `步長 ${res.step}（${res.stepPct}%）　一份 ${res.lotShares} 股。`
+        + `記得跑 atrgrid verify-tickers 核對後把 ticker_verified 改成 true。`);
+    }
+    state.snapshot = await api("/api/snapshot");
+    renderAll();
+  } catch (err) {
+    banner("err", "新增失敗", err.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+$("addHolding").addEventListener("click", addHolding);
 $("fetch").addEventListener("click", fetchQuotes);
 $("calc").addEventListener("click", () => { clearBanners(); calc(); });
 loadSnapshot();

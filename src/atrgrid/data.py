@@ -57,6 +57,15 @@ class PriceProvider(ABC):
         """回傳交易所登記的證券名稱，用於驗證代號。取不到時回傳 None。"""
         return None
 
+    def dividends(self, ticker: str) -> list[dict]:
+        """回傳來源已知的除息事件 ``[{"date": "YYYY-MM-DD", "amount": float}]``。
+
+        不是每個來源都有這項資料，取不到就回傳空列表 —— 呼叫端仍要把它當
+        「參考」而非權威資料：抓到的股利事件要人工核對金額與日期後才登記
+        進 ``portfolio.yaml``（見 :func:`atrgrid.config.add_ex_dividend`）。
+        """
+        return []
+
 
 # --------------------------------------------------------------------- CSV
 
@@ -370,14 +379,16 @@ class YahooProvider(PriceProvider):
             time.sleep(self.throttle - elapsed)
         self._last_call = time.time()
 
-    def _chart(self, ticker: str, rng: str = "2y") -> dict:
-        key = f"{ticker}:{rng}"
+    def _chart(self, ticker: str, rng: str = "2y", events: str | None = None) -> dict:
+        key = f"{ticker}:{rng}:{events or ''}"
         if key in self._chart_cache:
             return self._chart_cache[key]
 
         errors: list[str] = []
         for suffix in self._suffixes(ticker):
             url = f"{self.BASE}/{ticker}{suffix}?range={rng}&interval=1d"
+            if events:
+                url += f"&events={events}"
             self._wait()
             try:
                 payload = _http_get_json(url)
@@ -446,6 +457,17 @@ class YahooProvider(PriceProvider):
         meta = self._chart(ticker).get("meta") or {}
         name = meta.get("longName") or meta.get("shortName")
         return str(name).strip() if name else None
+
+    def dividends(self, ticker: str) -> list[dict]:
+        result = self._chart(ticker, rng="2y", events="div")
+        events = ((result.get("events") or {}).get("dividends") or {}).values()
+        out = [
+            {"date": _epoch_to_taipei_date(e["date"]), "amount": round(float(e["amount"]), 4)}
+            for e in events
+            if e.get("date") is not None and e.get("amount") is not None
+        ]
+        out.sort(key=lambda d: d["date"])
+        return out
 
 
 # ----------------------------------------------------------------- FinMind
@@ -586,6 +608,16 @@ class ChainProvider(PriceProvider):
             if name:
                 return name
         return None
+
+    def dividends(self, ticker: str) -> list[dict]:
+        for provider in self.providers:
+            try:
+                found = provider.dividends(ticker)
+            except DataError:
+                continue
+            if found:
+                return found
+        return []
 
 
 # --------------------------------------------------------------- 共用快取

@@ -1,7 +1,9 @@
 """指令列入口。
 
     atrgrid init            從 portfolio.yaml 建立初始狀態
+    atrgrid add-holding     新增一檔標的（寫入 portfolio.yaml、建立部位、算 ATR）
     atrgrid verify-tickers  用交易所資料核對股票代號
+    atrgrid dividends       抓股利事件，比對 portfolio.yaml 已登記的除息
     atrgrid advise          產生今日 13:00 建議（預設不改狀態）
     atrgrid record          記錄實際成交（可從 advise 的結果帶入）
     atrgrid status          顯示目前網格狀態
@@ -22,6 +24,8 @@ from pathlib import Path
 from .backtest import run_backtest, sweep_multiplier
 from .config import (
     ConfigError,
+    add_ex_dividend,
+    add_holding,
     check_step_covers_costs,
     default_config_dir,
     load_portfolio,
@@ -35,10 +39,12 @@ from .engine import (
     Decision,
     commit,
     evaluate,
+    grid_step,
     lot_size,
     trading_day_hint,
 )
 from .fees import buy_cost, max_shares_for_min_fee, round_trip_cost_pct, sell_cost
+from .indicators import wilder_atr
 from .report import (
     ReportContext,
     render_html,
@@ -47,7 +53,7 @@ from .report import (
     render_text,
     today_iso,
 )
-from .state import Trade, init_state, load_state, save_state
+from .state import Trade, add_position, init_state, load_state, save_state
 
 DEFAULT_STATE = Path("state/state.json")
 
@@ -123,6 +129,78 @@ def cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+# ------------------------------------------------------------ add-holding
+
+
+def cmd_add_holding(args: argparse.Namespace) -> int:
+    """新增一檔標的：寫入 portfolio.yaml、建立 state.json 部位、順便算給你看
+    ATR/步長 —— 但 ticker_verified 一律先寫 false，跟手動新增一樣要先過
+    `verify-tickers` 才會真的產生下單建議（engine.evaluate 的硬性閘門）。
+    """
+    settings_path, portfolio_path, state_path = _paths(args)
+    settings = load_settings(settings_path)
+    portfolio = load_portfolio(portfolio_path)
+
+    ticker = args.ticker.strip()
+    if any(h.ticker == ticker for h in portfolio.holdings):
+        print(f"{ticker} 已經在 portfolio.yaml 中，請改用其他指令調整", file=sys.stderr)
+        return 1
+
+    provider = _build_provider(args)
+    try:
+        price = provider.live_price(ticker)
+    except DataError as exc:
+        if not args.fallback_to_cost:
+            print(f"{ticker} 取不到即時價：{exc}", file=sys.stderr)
+            print("（可加 --fallback-to-cost 改用 --avg-cost 建檔）", file=sys.stderr)
+            return 1
+        price = args.avg_cost
+        print(f"! {ticker} 取價失敗，改用平均成本 {price:.2f} 建檔")
+
+    add_holding(
+        portfolio_path,
+        ticker=ticker,
+        name=args.name,
+        asset_class=args.asset_class,
+        shares=args.shares,
+        avg_cost=args.avg_cost,
+    )
+    portfolio = load_portfolio(portfolio_path)
+    holding = portfolio.by_ticker(ticker)
+
+    state = load_state(state_path)
+    today = args.date or today_iso()
+    position = add_position(state, holding, price, as_of=today)
+    save_state(state, state_path)
+
+    print(f"已新增 {ticker}　{args.name}（{args.asset_class}）→ {portfolio_path}")
+    print(f"錨點（=建檔市價） {position.anchor:.4f}，持股 {position.shares} 股")
+
+    try:
+        bars = provider.daily_bars(ticker, months=args.months)
+    except DataError as exc:
+        print(f"! ATR 算不出來，抓不到日 K：{exc}")
+        print("已新增，之後 verify-tickers 通過、日 K 補齊後就會有正常建議。")
+        return 0
+
+    params = resolve_params(settings, holding)
+    atr = wilder_atr(bars, params.atr_period)
+    if atr is None:
+        print(f"! 日 K 只有 {len(bars)} 根，不足 {params.atr_period + 1} 根算不出 ATR")
+    else:
+        step = grid_step(price, atr, params)
+        lot = lot_size(price, settings)
+        print(
+            f"ATR({params.atr_period}) {atr:.3f}（{atr / price * 100:.2f}%）　"
+            f"步長 {step:.3f}（{step / price * 100:.2f}%）　"
+            f"一份 {lot} 股（約 {lot * price:,.0f} 元）"
+        )
+
+    print("\n下一步：`atrgrid verify-tickers` 核對代號，通過後把 "
+          "ticker_verified 改成 true，才會產生下單建議。")
+    return 0
+
+
 # ----------------------------------------------------------- verify-tickers
 
 
@@ -161,6 +239,57 @@ def cmd_verify_tickers(args: argparse.Namespace) -> int:
         )
         return 1
     print("全部相符。請把 portfolio.yaml 中各檔的 ticker_verified 設為 true。")
+    return 0
+
+
+# --------------------------------------------------------------- dividends
+
+
+def cmd_dividends(args: argparse.Namespace) -> int:
+    """從行情來源抓股利事件，比對 portfolio.yaml 已登記的，列出新發現的。
+
+    預設唯讀（只列不寫）——來源資料是機械抓取，金額/日期偶有誤差或延遲，
+    要人工核對過再用 --apply 寫入，這跟 verify-tickers 的態度一致。
+    """
+    _, portfolio_path, _ = _paths(args)
+    portfolio = load_portfolio(portfolio_path)
+    provider = _build_provider(args)
+
+    tickers = args.tickers or [h.ticker for h in portfolio.holdings if h.enabled]
+    found_any = False
+    applied = 0
+    for ticker in tickers:
+        try:
+            holding = portfolio.by_ticker(ticker)
+        except KeyError:
+            print(f"  ?  {ticker}　不在 portfolio.yaml 中", file=sys.stderr)
+            continue
+        known = {str(e.get("date")) for e in holding.ex_dividends}
+        try:
+            events = provider.dividends(ticker)
+        except DataError as exc:
+            print(f"  !  {ticker:<8}{holding.name:<16}查詢失敗：{exc}")
+            continue
+        new_events = [e for e in events if e["date"] not in known]
+        if not new_events:
+            continue
+        found_any = True
+        for e in new_events:
+            print(
+                f"  +  {ticker:<8}{holding.name:<16}"
+                f"{e['date']}　配息 {e['amount']:.4f} 元"
+            )
+            if args.apply:
+                add_ex_dividend(portfolio_path, ticker, e["date"], e["amount"])
+                applied += 1
+
+    if not found_any:
+        print("沒有發現尚未登記的除息事件。")
+        return 0
+    if args.apply:
+        print(f"\n已寫入 {applied} 筆到 {portfolio_path}")
+    else:
+        print("\n以上是新發現、尚未登記的除息（僅列出）。核對無誤後加 --apply 寫入。")
     return 0
 
 
@@ -616,9 +745,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_init.set_defaults(func=cmd_init)
 
+    p_add = sub.add_parser("add-holding", help="新增一檔標的")
+    add_data_args(p_add)
+    p_add.add_argument("ticker")
+    p_add.add_argument("--name", required=True, help="中文名稱")
+    p_add.add_argument(
+        "--asset-class", dest="asset_class", required=True,
+        choices=["equity", "bond", "leveraged"],
+    )
+    p_add.add_argument("--shares", type=int, default=0, help="既有股數，預設 0（全新建倉）")
+    p_add.add_argument("--avg-cost", dest="avg_cost", type=float, required=True)
+    p_add.add_argument("--date", help="建檔日（預設今天）")
+    p_add.add_argument(
+        "--fallback-to-cost", action="store_true",
+        help="抓不到即時價時改用 --avg-cost 建檔",
+    )
+    p_add.set_defaults(func=cmd_add_holding)
+
     p_verify = sub.add_parser("verify-tickers", help="核對股票代號")
     add_data_args(p_verify)
     p_verify.set_defaults(func=cmd_verify_tickers)
+
+    p_div = sub.add_parser("dividends", help="從行情來源抓股利事件並比對登記狀況")
+    add_data_args(p_div)
+    p_div.add_argument("tickers", nargs="*", help="標的代號，留空代表全部")
+    p_div.add_argument(
+        "--apply", action="store_true", help="把新發現的除息寫入 portfolio.yaml"
+    )
+    p_div.set_defaults(func=cmd_dividends)
 
     p_advise = sub.add_parser("advise", help="產生今日建議")
     add_data_args(p_advise)

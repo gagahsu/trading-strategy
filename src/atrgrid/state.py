@@ -236,3 +236,29 @@ def init_state(
             lots=lots,
         )
     return State(cash=cash, positions=positions, last_run_date=None)
+
+
+def add_position(state: State, holding: Any, price: float, as_of: str | None = None) -> Position:
+    """幫既有狀態加一檔新持股的部位，不動其他標的與現金。
+
+    跟 :func:`init_state` 同一套錨點邏輯：錨點設在此刻的市價，既有股數（如果
+    有）記成一筆 ``initial`` 成本批次。
+    """
+    if holding.ticker in state.positions:
+        raise ValueError(f"{holding.ticker} 已經有部位了")
+    as_of = as_of or date.today().isoformat()
+    lots = []
+    if holding.shares > 0:
+        lots.append(
+            Lot(date=as_of, price=holding.avg_cost, shares=holding.shares, source="initial")
+        )
+    position = Position(
+        ticker=holding.ticker,
+        shares=holding.shares,
+        anchor=price,
+        rung=0,
+        baseline_shares=holding.shares,
+        lots=lots,
+    )
+    state.positions[holding.ticker] = position
+    return position
