@@ -171,6 +171,7 @@ def cmd_add_holding(args: argparse.Namespace) -> int:
             price = args.avg_cost
             print(f"! {ticker} 取價失敗，改用平均成本 {price:.2f} 建檔")
 
+    today = args.date or today_iso()
     add_holding(
         portfolio_path,
         ticker=ticker,
@@ -178,12 +179,12 @@ def cmd_add_holding(args: argparse.Namespace) -> int:
         asset_class=args.asset_class,
         shares=args.shares,
         avg_cost=args.avg_cost,
+        tracked_since=today,
     )
     portfolio = load_portfolio(portfolio_path)
     holding = portfolio.by_ticker(ticker)
 
     state = load_state(state_path)
-    today = args.date or today_iso()
     position = add_position(state, holding, price, as_of=today)
     save_state(state, state_path)
 
@@ -220,16 +221,33 @@ def cmd_add_holding(args: argparse.Namespace) -> int:
 # ----------------------------------------------------------- verify-tickers
 
 
+def _security_name_zh(ticker: str) -> str | None:
+    """依序試 TWSE→FinMind→Yahoo，回傳第一個查到的中文名。
+
+    跟 --provider 選了什麼無關：TWSE／FinMind 登記的是中文名，Yahoo 給的
+    是英文 longName/shortName，拿英文名去跟 portfolio.yaml 的中文簡稱比對
+    永遠比不出結果（見 CLAUDE.md 的已知地雷），所以固定用這個順序，Yahoo
+    只當備援。
+    """
+    for kind in ("twse", "finmind", "yahoo"):
+        try:
+            name = make_provider(kind, cache_dir=Path("data/cache")).security_name(ticker)
+        except DataError:
+            continue
+        if name:
+            return name
+    return None
+
+
 def cmd_verify_tickers(args: argparse.Namespace) -> int:
     _, portfolio, _ = _load_all(args)
-    provider = _build_provider(args)
 
     print("核對股票代號與交易所登記名稱：\n")
     mismatches = 0
     unresolved = 0
     for holding in portfolio.holdings:
         try:
-            actual = provider.security_name(holding.ticker)
+            actual = _security_name_zh(holding.ticker)
         except DataError as exc:
             actual = None
             print(f"  ?  {holding.ticker:<8}{holding.name:<20}查詢失敗：{exc}")
@@ -286,7 +304,11 @@ def cmd_dividends(args: argparse.Namespace) -> int:
         except DataError as exc:
             print(f"  !  {ticker:<8}{holding.name:<16}查詢失敗：{exc}")
             continue
-        new_events = [e for e in events if e["date"] not in known]
+        new_events = [
+            e for e in events
+            if e["date"] not in known
+            and (holding.tracked_since is None or e["date"] > holding.tracked_since)
+        ]
         if not new_events:
             continue
         found_any = True

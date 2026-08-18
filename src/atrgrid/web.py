@@ -28,6 +28,7 @@ from typing import Any
 from .config import (
     VALID_CLASSES,
     ConfigError,
+    Holding,
     Portfolio,
     Settings,
     add_ex_dividend,
@@ -36,6 +37,7 @@ from .config import (
     load_settings,
     resolve_params,
     set_ticker_verified,
+    update_ex_dividend,
 )
 from .data import DataError, PriceProvider, make_provider
 from .engine import BUY, SELL, Decision, evaluate, grid_step, lot_size, next_grid_levels
@@ -200,6 +202,7 @@ class GridService:
                     "rungs": t.rungs,
                     "realizedPnl": t.realized_pnl,
                     "note": t.note,
+                    "consumedLots": t.consumed_lots,
                 }
                 for i, t in enumerate(state.trades)
             ][-100:],
@@ -464,17 +467,19 @@ class GridService:
             if any(h.ticker == ticker for h in portfolio.holdings):
                 raise ApiError(f"{ticker} 已經在 portfolio.yaml 中")
 
+            today = date.today().isoformat()
             try:
                 add_holding(
                     portfolio_path, ticker=ticker, name=name,
                     asset_class=asset_class, shares=shares, avg_cost=avg_cost,
+                    tracked_since=today,
                 )
             except ConfigError as exc:
                 raise ApiError(str(exc)) from exc
 
             holding = self.portfolio().by_ticker(ticker)
             state = load_state(self.state_path)
-            position = add_position(state, holding, price, as_of=date.today().isoformat())
+            position = add_position(state, holding, price, as_of=today)
             save_state(state, self.state_path)
 
             result: dict[str, Any] = {
@@ -488,7 +493,11 @@ class GridService:
         return result
 
     def dividend_suggestions(self, ticker: str, kind: str | None = None) -> dict[str, Any]:
-        """從行情來源抓股利事件，扣掉已登記的，回傳新發現的（唯讀，不寫檔）。"""
+        """從行情來源抓股利事件，扣掉已登記的與建檔基準日以前的，回傳新發現的
+        （唯讀，不寫檔）。基準日（含）以前的除息早就反映在建檔當下的市價
+        裡，列出來只會誘使使用者誤點「登記」，把錨點雙重扣減（見
+        Holding.tracked_since 的說明）。
+        """
         try:
             holding = self.portfolio().by_ticker(ticker)
         except KeyError as exc:
@@ -498,7 +507,12 @@ class GridService:
             events = self.provider(kind).dividends(ticker)
         except DataError as exc:
             raise ApiError(str(exc)) from exc
-        return {"ticker": ticker, "new": [e for e in events if e["date"] not in known]}
+        new = [
+            e for e in events
+            if e["date"] not in known
+            and (holding.tracked_since is None or e["date"] > holding.tracked_since)
+        ]
+        return {"ticker": ticker, "new": new}
 
     def ex_dividend(self, payload: dict[str, Any]) -> dict[str, Any]:
         """登記一筆除息到 portfolio.yaml（不動 state.json 的錨點——那是下次
@@ -526,41 +540,86 @@ class GridService:
             "exDividends": holding.ex_dividends,
         }
 
-    def verify_tickers(self, kind: str | None = None) -> dict[str, Any]:
-        """核對 portfolio.yaml 的代號跟行情來源登記名稱是否相符。
+    def ex_dividend_update(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """修改一筆已登記的除息（依原日期找到那一筆，改日期／金額）。"""
+        ticker = str(payload.get("ticker", "")).strip()
+        old_date = str(payload.get("oldDate", "")).strip()
+        new_date = str(payload.get("date", "")).strip()
+        try:
+            amount = float(payload["amount"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ApiError(f"amount 必須是數字：{exc}") from exc
 
-        跟 CLI 的 `atrgrid verify-tickers` 同一套寬鬆比對（中文簡稱互相包含），
-        來源給英文名稱（例如 Yahoo 的 longName）時本來就會誤判 —— 見
-        CLAUDE.md 的已知地雷。所以這裡只回報，不自動改 ticker_verified，
-        要靠 :meth:`set_verified` 讓使用者自己看過再翻。
-        """
-        provider = self.provider(kind)
-        results = []
-        for holding in self.portfolio().holdings:
+        portfolio_path = self.config_dir / "portfolio.yaml"
+        with self.lock:
             try:
-                actual = provider.security_name(holding.ticker)
-            except DataError as exc:
-                results.append(
-                    {"ticker": holding.ticker, "name": holding.name,
+                update_ex_dividend(portfolio_path, ticker, old_date, new_date, amount)
+            except KeyError as exc:
+                raise ApiError(f"{ticker} 不在持股清單中", 404) from exc
+            except ConfigError as exc:
+                raise ApiError(str(exc)) from exc
+            holding = self.portfolio().by_ticker(ticker)
+
+        return {
+            "ok": True,
+            "ticker": ticker,
+            "exDividends": holding.ex_dividends,
+        }
+
+    def _security_name_zh(self, ticker: str) -> str | None:
+        """依序試 TWSE→FinMind→Yahoo，回傳第一個查到的名稱。
+
+        跟 :meth:`provider` 用哪個來源算報價無關：TWSE／FinMind 登記的是
+        中文名，Yahoo 給的是英文 longName/shortName。:meth:`verify_tickers`
+        要拿中文名去跟 portfolio.yaml 的中文簡稱比對，所以固定用這個順序，
+        不管使用者在畫面上選的來源是什麼 —— 選 Yahoo 也一樣會查到中文名，
+        不然英文對中文永遠比對不出結果（CLAUDE.md 的已知地雷）。Yahoo 排
+        最後只是當 TWSE／FinMind 都查不到時的備援。
+        """
+        for kind in ("twse", "finmind", "yahoo"):
+            try:
+                name = self.provider(kind).security_name(ticker)
+            except DataError:
+                continue
+            if name:
+                return name
+        return None
+
+    def _verify_one(self, holding: Holding) -> dict[str, Any]:
+        try:
+            actual = self._security_name_zh(holding.ticker)
+        except DataError as exc:
+            return {"ticker": holding.ticker, "name": holding.name,
                      "status": "unresolved", "actual": None, "error": str(exc)}
-                )
-                continue
-            if actual is None:
-                results.append(
-                    {"ticker": holding.ticker, "name": holding.name,
+        if actual is None:
+            return {"ticker": holding.ticker, "name": holding.name,
                      "status": "unresolved", "actual": None, "error": "查無此代號"}
-                )
-                continue
-            stripped = holding.name.replace(" ", "")
-            ok = stripped in actual.replace(" ", "") or actual.replace(" ", "") in stripped
-            results.append(
-                {
-                    "ticker": holding.ticker, "name": holding.name,
-                    "status": "ok" if ok else "mismatch",
-                    "actual": actual, "verified": holding.ticker_verified,
-                }
-            )
-        return {"results": results}
+        stripped = holding.name.replace(" ", "")
+        ok = stripped in actual.replace(" ", "") or actual.replace(" ", "") in stripped
+        return {
+            "ticker": holding.ticker, "name": holding.name,
+            "status": "ok" if ok else "mismatch",
+            "actual": actual, "verified": holding.ticker_verified,
+        }
+
+    def verify_tickers(self, kind: str | None = None) -> dict[str, Any]:
+        """核對 portfolio.yaml 全部持股的代號跟行情來源登記名稱是否相符。
+
+        跟 CLI 的 `atrgrid verify-tickers` 同一套寬鬆比對（中文簡稱互相包含）。
+        名稱一律用 :meth:`_security_name_zh` 拿中文名，不吃 ``kind`` 參數
+        （保留這個參數只是為了跟其他端點簽名一致，呼叫端傳什麼都不影響
+        比對結果）。這裡只回報，不自動改 ticker_verified，要靠
+        :meth:`set_verified` 讓使用者自己看過再翻。
+        """
+        return {"results": [self._verify_one(h) for h in self.portfolio().holdings]}
+
+    def verify_ticker(self, ticker: str) -> dict[str, Any]:
+        """核對單一標的（給前端逐檔跑進度條用），邏輯跟 :meth:`verify_tickers` 同一套。"""
+        try:
+            holding = self.portfolio().by_ticker(ticker)
+        except KeyError as exc:
+            raise ApiError(f"{ticker} 不在持股清單中", 404) from exc
+        return self._verify_one(holding)
 
     def set_verified(self, ticker: str, verified: bool) -> dict[str, Any]:
         """人工核對後，手動把某檔的 ticker_verified 翻成 true/false。"""
@@ -778,6 +837,8 @@ def make_handler(service: GridService):
                 self._dispatch(run_preview)
             elif path == "/api/ex-dividend":
                 self._dispatch(lambda: service.ex_dividend(self._body()))
+            elif path == "/api/ex-dividend-update":
+                self._dispatch(lambda: service.ex_dividend_update(self._body()))
             elif path == "/api/dividend-suggestions":
                 def run_div():
                     body = self._body()
@@ -794,6 +855,13 @@ def make_handler(service: GridService):
                 self._dispatch(
                     lambda: service.verify_tickers(self._body().get("source"))
                 )
+            elif path == "/api/verify-ticker":
+                def run_verify_ticker():
+                    ticker = str(self._body().get("ticker", "")).strip()
+                    if not ticker:
+                        raise ApiError("ticker 必填")
+                    return service.verify_ticker(ticker)
+                self._dispatch(run_verify_ticker)
             elif path == "/api/set-verified":
                 def run_set_verified():
                     body = self._body()

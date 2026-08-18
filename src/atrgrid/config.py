@@ -128,6 +128,11 @@ class Holding:
     overrides: dict[str, Any] = field(default_factory=dict)
     #: 手動登記的除息，格式 [{"date": "2026-07-16", "amount": 0.35}]
     ex_dividends: list[dict[str, Any]] = field(default_factory=list)
+    #: 建檔基準日（YYYY-MM-DD）。錨點是從這天的市價開始算的，這天（含）以前
+    #: 發生的除息早就反映在那個市價裡了，不該再登記／再扣一次；掃描除息時
+    #: 只該列出這天之後的新事件。``None`` 表示沒登記，不做任何過濾（相容
+    #: 舊資料）。
+    tracked_since: str | None = None
 
     def validate(self) -> None:
         if self.asset_class not in VALID_CLASSES:
@@ -144,6 +149,14 @@ class Holding:
                 raise ConfigError(
                     f"{self.ticker}: ex_dividends 每筆都需要 date 與 amount"
                 )
+        if self.tracked_since is not None:
+            try:
+                _date.fromisoformat(self.tracked_since)
+            except ValueError as exc:
+                raise ConfigError(
+                    f"{self.ticker}: tracked_since 日期格式錯誤，需要 YYYY-MM-DD："
+                    f"{self.tracked_since}"
+                ) from exc
 
 
 @dataclass(frozen=True)
@@ -235,6 +248,9 @@ def load_portfolio(path: Path | str) -> Portfolio:
             enabled=bool(entry.get("enabled", True)),
             overrides=dict(entry.get("grid") or {}),
             ex_dividends=list(entry.get("ex_dividends") or []),
+            tracked_since=(
+                str(entry["tracked_since"]) if entry.get("tracked_since") else None
+            ),
         )
         holding.validate()
         holdings.append(holding)
@@ -248,12 +264,16 @@ def add_holding(
     asset_class: str,
     shares: int,
     avg_cost: float,
+    tracked_since: str | None = None,
 ) -> None:
     """在 portfolio.yaml 尾端加一檔新持股（就地改檔，保留既有排版與註解）。
 
     新增的一律 ``ticker_verified: false`` —— 跟手動新增的規矩一樣，未經
     :func:`atrgrid verify-tickers` 核對前不產生任何下單建議（見 engine.evaluate
     的硬性閘門）。同樣的文字手術手法見 :func:`add_ex_dividend` 的說明。
+
+    ``tracked_since`` 沒給就用今天——建檔當下的市價就是這檔的錨點起點，
+    這天（含）以前的除息不該回頭補登（見 Holding.tracked_since 的說明）。
     """
     ticker = ticker.strip()
     if not ticker:
@@ -264,6 +284,11 @@ def add_holding(
         raise ConfigError("shares 不可為負")
     if avg_cost <= 0:
         raise ConfigError("avg_cost 必須 > 0")
+    tracked_since = tracked_since or _date.today().isoformat()
+    try:
+        _date.fromisoformat(tracked_since)
+    except ValueError as exc:
+        raise ConfigError(f"tracked_since 日期格式錯誤，需要 YYYY-MM-DD：{tracked_since}") from exc
 
     portfolio = load_portfolio(path)
     if any(h.ticker == ticker for h in portfolio.holdings):
@@ -281,6 +306,7 @@ def add_holding(
         f"    shares: {shares}\n"
         f"    avg_cost: {avg_cost}\n"
         f"    ticker_verified: false\n"
+        f'    tracked_since: "{tracked_since}"\n'
     )
     path.write_text(text + block, encoding="utf-8")
     load_portfolio(path)  # 寫完立刻重讀驗證，寫壞了馬上知道
@@ -357,6 +383,45 @@ def add_ex_dividend(
         block[trim:trim] = [f"{field_indent}ex_dividends:\n", new_entry]
 
     lines[start:end] = block
+    path.write_text("".join(lines), encoding="utf-8")
+    load_portfolio(path)  # 寫完立刻重讀驗證，寫壞了馬上知道
+
+
+def update_ex_dividend(
+    path: Path | str, ticker: str, old_date: str, new_date: str, amount: float
+) -> None:
+    """修改該檔持股下已登記的一筆除息（依 ``old_date`` 找到那一筆，就地改檔）。"""
+    try:
+        _date.fromisoformat(new_date)
+    except ValueError as exc:
+        raise ConfigError(f"日期格式錯誤，需要 YYYY-MM-DD：{new_date}") from exc
+    if amount <= 0:
+        raise ConfigError("除息金額必須 > 0")
+
+    portfolio = load_portfolio(path)
+    holding = portfolio.by_ticker(ticker)  # 先確認代號存在，KeyError 交給呼叫端處理
+    if not any(str(e.get("date")) == old_date for e in holding.ex_dividends):
+        raise ConfigError(f"{ticker} 沒有登記 {old_date} 的除息")
+    if new_date != old_date and any(
+        str(e.get("date")) == new_date for e in holding.ex_dividends
+    ):
+        raise ConfigError(f"{ticker} 已登記過 {new_date} 的除息")
+
+    path = Path(path)
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    start, end, _indent = _find_holding_block(lines, path, ticker)
+
+    entry_line = re.compile(
+        r'^(\s*)-\s*\{\s*date:\s*["\']' + re.escape(old_date) + r'["\']\s*,\s*amount:.*\}\s*$'
+    )
+    for i in range(start, end):
+        m = entry_line.match(lines[i])
+        if m:
+            lines[i] = f'{m.group(1)}- {{ date: "{new_date}", amount: {amount} }}\n'
+            break
+    else:
+        raise ConfigError(f"{ticker} 的除息紀錄格式跟預期不同，改不了，請手動編輯")
+
     path.write_text("".join(lines), encoding="utf-8")
     load_portfolio(path)  # 寫完立刻重讀驗證，寫壞了馬上知道
 

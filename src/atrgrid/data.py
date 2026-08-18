@@ -15,6 +15,8 @@ from __future__ import annotations
 import csv
 import json
 import os
+import re
+import ssl
 import time
 import urllib.error
 import urllib.parse
@@ -24,6 +26,13 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from .indicators import Bar
+
+try:  # 用 certifi 的憑證庫，繞開部分機器上系統憑證鏈缺 SKI 欄位導致的驗證失敗
+    import certifi
+
+    _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+except ImportError:  # pragma: no cover - certifi 未安裝時退回系統預設驗證
+    _SSL_CONTEXT = ssl.create_default_context()
 
 try:  # Python 3.9+ 標準庫；缺 tzdata 的精簡環境則退回固定偏移
     from zoneinfo import ZoneInfo
@@ -35,6 +44,7 @@ except Exception:  # pragma: no cover - 視執行環境而定
 USER_AGENT = "Mozilla/5.0 (compatible; atrgrid/1.0; +https://github.com/)"
 TWSE_DAILY = "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY"
 TWSE_QUOTE = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp"
+TWSE_EXRIGHT = "https://www.twse.com.tw/exchangeReport/TWT48U"
 TPEX_DAILY = "https://www.tpex.org.tw/www/zh-tw/afterTrading/tradingStock"
 
 
@@ -126,7 +136,9 @@ def _http_get_json(url: str, timeout: int = 20, retries: int = 3) -> dict:
     for attempt in range(retries):
         try:
             request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(request, timeout=timeout) as response:
+            with urllib.request.urlopen(
+                request, timeout=timeout, context=_SSL_CONTEXT
+            ) as response:
                 return json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
             last = exc
@@ -147,12 +159,61 @@ class TwseProvider(PriceProvider):
         self.throttle = throttle
         self.cache_ttl_hours = cache_ttl_hours
         self._last_call = 0.0
+        self._exright_cache: dict[str, list[list[str]]] = {}
 
     def _wait(self) -> None:
         elapsed = time.time() - self._last_call
         if elapsed < self.throttle:
             time.sleep(self.throttle - elapsed)
         self._last_call = time.time()
+
+    # ------------------------------------------------------------ 除權息
+    def dividends(self, ticker: str) -> list[dict]:
+        """查「除權除息預告表」（TWT48U），抓現金股利 > 0 的列。
+
+        這張表是證交所當天就會登的官方資料，比 Yahoo 的 dividend event
+        （常常延遲一兩天才出現）即時，適合當天 13:00 跑 advise 時抓當天
+        剛發生的除息。這張表本身就是近期快照，``date=`` 查詢參數證交所端
+        其實沒在用（不管填哪天都回同一份），所以只查一次，不要逐日回溯，
+        免得同一筆事件被重複計入。
+        """
+        out: list[dict] = []
+        seen: set[tuple[str, float]] = set()
+        for row in self._exright_day(date.today()):
+            if len(row) < 8 or row[1] != ticker:
+                continue
+            if row[3] not in ("息", "權息"):
+                continue
+            try:
+                amount = float(row[7])
+            except (TypeError, ValueError):
+                continue
+            if amount <= 0:
+                continue
+            try:
+                ex_date = _parse_roc_date(row[0])
+            except ValueError:
+                continue
+            amount = round(amount, 4)
+            if (ex_date, amount) in seen:
+                continue
+            seen.add((ex_date, amount))
+            out.append({"date": ex_date, "amount": amount})
+        out.sort(key=lambda d: d["date"])
+        return out
+
+    def _exright_day(self, day: date) -> list[list[str]]:
+        key = day.strftime("%Y%m%d")
+        if key not in self._exright_cache:
+            self._wait()
+            url = f"{TWSE_EXRIGHT}?response=json&date={key}"
+            try:
+                payload = _http_get_json(url)
+            except DataError:
+                payload = {}
+            rows = payload.get("data") or [] if payload.get("stat") == "OK" else []
+            self._exright_cache[key] = rows
+        return self._exright_cache[key]
 
     # ------------------------------------------------------------ 日 K
     def _fetch_month(self, ticker: str, month_start: date) -> list[Bar]:
@@ -253,6 +314,15 @@ class TwseProvider(PriceProvider):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as handle:
             json.dump([bar.__dict__ for bar in bars], handle, ensure_ascii=False)
+
+
+def _parse_roc_date(value: str) -> str:
+    """把民國日期（``115年08月18日``）轉成 ISO（``2026-08-18``）。"""
+    match = re.match(r"(\d+)年(\d+)月(\d+)日", value.strip())
+    if not match:
+        raise ValueError(f"無法解析民國日期：{value}")
+    roc_year, month, day = match.groups()
+    return f"{int(roc_year) + 1911:04d}-{int(month):02d}-{int(day):02d}"
 
 
 def _parse_twse_row(row: list[str]) -> Bar:
@@ -610,14 +680,22 @@ class ChainProvider(PriceProvider):
         return None
 
     def dividends(self, ticker: str) -> list[dict]:
+        """合併所有來源的結果（依日期去重），不是第一個有結果就採用。
+
+        來源之間對「除息事件」的涵蓋範圍不互補：Yahoo 涵蓋歷史久但當天
+        常延遲登錄，TWSE 只有近期快照但當天就有。用「第一個成功就採用」
+        的規則（daily_bars/live_price 用的那種）會讓 Yahoo 一有舊資料就
+        整個短路，永遠查不到 TWSE 才有的當日事件。
+        """
+        merged: dict[str, dict] = {}
         for provider in self.providers:
             try:
-                found = provider.dividends(ticker)
+                events = provider.dividends(ticker)
             except DataError:
                 continue
-            if found:
-                return found
-        return []
+            for event in events:
+                merged.setdefault(str(event["date"]), event)
+        return sorted(merged.values(), key=lambda d: d["date"])
 
 
 # --------------------------------------------------------------- 共用快取

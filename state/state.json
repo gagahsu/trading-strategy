@@ -1,17 +1,17 @@
 {
   "version": 2,
-  "cash": 200000.0,
+  "cash": 170040.22,
   "last_run_date": "2026-08-18",
   "positions": {
     "0052": {
       "ticker": "0052",
       "shares": 769,
-      "anchor": 61.8,
+      "anchor": 60.9,
       "rung": 0,
       "baseline_shares": 769,
       "lots": [
         {
-          "date": "2026-08-17",
+          "date": "2026-08-18",
           "price": 59.0234,
           "shares": 769,
           "source": "initial"
@@ -25,12 +25,12 @@
     "00685L": {
       "ticker": "00685L",
       "shares": 2000,
-      "anchor": 11.84,
+      "anchor": 11.44,
       "rung": 0,
       "baseline_shares": 2000,
       "lots": [
         {
-          "date": "2026-08-17",
+          "date": "2026-08-18",
           "price": 10.2835,
           "shares": 2000,
           "source": "initial"
@@ -44,12 +44,12 @@
     "00725B": {
       "ticker": "00725B",
       "shares": 6000,
-      "anchor": 34.03,
+      "anchor": 33.68,
       "rung": 0,
       "baseline_shares": 6000,
       "lots": [
         {
-          "date": "2026-08-17",
+          "date": "2026-08-18",
           "price": 35.058,
           "shares": 6000,
           "source": "initial"
@@ -63,12 +63,12 @@
     "00735": {
       "ticker": "00735",
       "shares": 346,
-      "anchor": 104.05,
+      "anchor": 102.0,
       "rung": 0,
       "baseline_shares": 346,
       "lots": [
         {
-          "date": "2026-08-17",
+          "date": "2026-08-18",
           "price": 100.5405,
           "shares": 346,
           "source": "initial"
@@ -81,15 +81,15 @@
     },
     "00757": {
       "ticker": "00757",
-      "shares": 1073,
-      "anchor": 140.3,
+      "shares": 1109,
+      "anchor": 137.45,
       "rung": 0,
-      "baseline_shares": 1073,
+      "baseline_shares": 1109,
       "lots": [
         {
-          "date": "2026-08-17",
-          "price": 111.5424,
-          "shares": 1073,
+          "date": "2026-08-18",
+          "price": 112.3904,
+          "shares": 1109,
           "source": "initial"
         }
       ],
@@ -100,15 +100,15 @@
     },
     "00878": {
       "ticker": "00878",
-      "shares": 1000,
-      "anchor": 33.75,
+      "shares": 1308,
+      "anchor": 32.38,
       "rung": 0,
-      "baseline_shares": 1000,
+      "baseline_shares": 1308,
       "lots": [
         {
-          "date": "2026-08-17",
-          "price": 22.979,
-          "shares": 1000,
+          "date": "2026-08-18",
+          "price": 25.2026,
+          "shares": 1308,
           "source": "initial"
         }
       ],
@@ -120,12 +120,12 @@
     "00910": {
       "ticker": "00910",
       "shares": 439,
-      "anchor": 63.95,
+      "anchor": 63.15,
       "rung": 0,
       "baseline_shares": 439,
       "lots": [
         {
-          "date": "2026-08-17",
+          "date": "2026-08-18",
           "price": 68.0956,
           "shares": 439,
           "source": "initial"
@@ -138,15 +138,15 @@
     },
     "00933B": {
       "ticker": "00933B",
-      "shares": 3500,
-      "anchor": 15.75,
+      "shares": 4144,
+      "anchor": 15.53,
       "rung": 0,
-      "baseline_shares": 3500,
+      "baseline_shares": 4144,
       "lots": [
         {
-          "date": "2026-08-17",
-          "price": 16.162,
-          "shares": 3500,
+          "date": "2026-08-18",
+          "price": 16.0654,
+          "shares": 4144,
           "source": "initial"
         }
       ],
@@ -158,12 +158,12 @@
     "00937B": {
       "ticker": "00937B",
       "shares": 3017,
-      "anchor": 14.41,
+      "anchor": 14.18,
       "rung": 0,
       "baseline_shares": 3017,
       "lots": [
         {
-          "date": "2026-08-17",
+          "date": "2026-08-18",
           "price": 14.8571,
           "shares": 3017,
           "source": "initial"
@@ -177,12 +177,12 @@
     "00947": {
       "ticker": "00947",
       "shares": 754,
-      "anchor": 37.74,
+      "anchor": 36.48,
       "rung": 0,
       "baseline_shares": 754,
       "lots": [
         {
-          "date": "2026-08-17",
+          "date": "2026-08-18",
           "price": 33.1194,
           "shares": 754,
           "source": "initial"
@@ -196,12 +196,12 @@
     "00954": {
       "ticker": "00954",
       "shares": 4904,
-      "anchor": 19.85,
+      "anchor": 19.14,
       "rung": 0,
       "baseline_shares": 4904,
       "lots": [
         {
-          "date": "2026-08-17",
+          "date": "2026-08-18",
           "price": 18.864,
           "shares": 4904,
           "source": "initial"
@@ -220,7 +220,7 @@
       "baseline_shares": 12332,
       "lots": [
         {
-          "date": "2026-08-17",
+          "date": "2026-08-18",
           "price": 15.2839,
           "shares": 12332,
           "source": "initial"
@@ -233,15 +233,15 @@
     },
     "00965": {
       "ticker": "00965",
-      "shares": 600,
-      "anchor": 27.26,
+      "shares": 786,
+      "anchor": 26.95,
       "rung": 0,
-      "baseline_shares": 600,
+      "baseline_shares": 786,
       "lots": [
         {
-          "date": "2026-08-17",
-          "price": 24.4,
-          "shares": 600,
+          "date": "2026-08-18",
+          "price": 24.9924,
+          "shares": 786,
           "source": "initial"
         }
       ],
@@ -253,12 +253,12 @@
     "009805": {
       "ticker": "009805",
       "shares": 7000,
-      "anchor": 16.29,
+      "anchor": 16.25,
       "rung": 0,
       "baseline_shares": 7000,
       "lots": [
         {
-          "date": "2026-08-17",
+          "date": "2026-08-18",
           "price": 15.0769,
           "shares": 7000,
           "source": "initial"
@@ -272,12 +272,12 @@
     "00981A": {
       "ticker": "00981A",
       "shares": 6000,
-      "anchor": 30.39,
+      "anchor": 29.61,
       "rung": 0,
       "baseline_shares": 6000,
       "lots": [
         {
-          "date": "2026-08-17",
+          "date": "2026-08-18",
           "price": 29.618,
           "shares": 6000,
           "source": "initial"
@@ -291,12 +291,12 @@
     "00981D": {
       "ticker": "00981D",
       "shares": 10000,
-      "anchor": 10.45,
+      "anchor": 10.35,
       "rung": 0,
       "baseline_shares": 10000,
       "lots": [
         {
-          "date": "2026-08-17",
+          "date": "2026-08-18",
           "price": 10.3671,
           "shares": 10000,
           "source": "initial"
@@ -310,12 +310,12 @@
     "00988A": {
       "ticker": "00988A",
       "shares": 5000,
-      "anchor": 17.69,
+      "anchor": 17.32,
       "rung": 0,
       "baseline_shares": 5000,
       "lots": [
         {
-          "date": "2026-08-17",
+          "date": "2026-08-18",
           "price": 19.1052,
           "shares": 5000,
           "source": "initial"
@@ -329,12 +329,12 @@
     "00990A": {
       "ticker": "00990A",
       "shares": 4000,
-      "anchor": 16.72,
+      "anchor": 16.52,
       "rung": 0,
       "baseline_shares": 4000,
       "lots": [
         {
-          "date": "2026-08-17",
+          "date": "2026-08-18",
           "price": 18.707,
           "shares": 4000,
           "source": "initial"
@@ -348,33 +348,14 @@
     "00997A": {
       "ticker": "00997A",
       "shares": 6000,
-      "anchor": 11.85,
+      "anchor": 11.76,
       "rung": 0,
       "baseline_shares": 6000,
       "lots": [
         {
-          "date": "2026-08-17",
+          "date": "2026-08-18",
           "price": 12.0643,
           "shares": 6000,
-          "source": "initial"
-        }
-      ],
-      "realized_pnl": 0.0,
-      "last_trade_date": null,
-      "applied_ex_dividends": [],
-      "last_drift_date": null
-    },
-    "2330": {
-      "ticker": "2330",
-      "shares": 18,
-      "anchor": 2375.0,
-      "rung": 0,
-      "baseline_shares": 18,
-      "lots": [
-        {
-          "date": "2026-08-18",
-          "price": 2091.11,
-          "shares": 18,
           "source": "initial"
         }
       ],

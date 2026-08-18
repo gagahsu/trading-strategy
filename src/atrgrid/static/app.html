@@ -46,6 +46,14 @@ body{
 }
 .topbar .wrap{display:flex;flex-wrap:wrap;gap:.85rem 1.25rem;
   align-items:center;padding-top:.85rem;padding-bottom:.85rem}
+.progress-wrap{display:flex;align-items:center;gap:.6rem;
+  padding:0 0 .7rem}
+.progress-track{flex:1 1 auto;height:6px;border-radius:3px;
+  background:var(--sunk);overflow:hidden}
+.progress-fill{height:100%;width:0%;border-radius:3px;background:var(--brass);
+  transition:width .18s ease}
+.progress-label{font-family:var(--mono);font-size:.72rem;color:var(--muted);
+  white-space:nowrap}
 h1{font-family:var(--serif);font-size:1.2rem;font-weight:600;margin:0;
   letter-spacing:-.01em;white-space:nowrap}
 h1 small{display:block;font-family:var(--mono);font-size:.66rem;font-weight:400;
@@ -63,6 +71,7 @@ button,select,input{font:inherit;color:inherit}
   font-weight:600}
 .btn.primary:hover{filter:brightness(1.08)}
 .btn.tiny{padding:.2rem .5rem;font-size:.76rem;border-radius:4px}
+.lot-hint{cursor:help;border-bottom:1px dotted var(--muted)}
 select.src{background:var(--panel);border:1px solid var(--rule);border-radius:6px;
   padding:.42rem .55rem;font-size:.85rem}
 :focus-visible{outline:2px solid var(--brass);outline-offset:2px}
@@ -205,7 +214,14 @@ footer{margin-top:3rem;padding-top:1.1rem;border-top:1px solid var(--rule);
   <button class="btn" id="addHolding">+ 新增標的</button>
   <button class="btn" id="openVerify">核對代號</button>
   <button class="btn" id="openScan">掃描除息</button>
-</div></div>
+</div>
+<div class="wrap">
+  <div class="progress-wrap" id="progressWrap" hidden>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    <span class="progress-label" id="progressLabel"></span>
+  </div>
+</div>
+</div>
 
 <div class="wrap">
   <div id="banners"></div>
@@ -382,6 +398,31 @@ footer{margin-top:3rem;padding-top:1.1rem;border-top:1px solid var(--rule);
   </div>
 </div>
 
+<div class="modal-overlay" id="divModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="divModalTitle"
+    style="max-width:560px">
+    <h3 id="divModalTitle">除息紀錄</h3>
+    <div class="preview" id="div-hint"></div>
+    <div id="div-list"></div>
+    <form id="divAddForm">
+      <div class="field-row">
+        <div class="field">
+          <label for="div-date">除息日</label>
+          <input id="div-date" type="date" required>
+        </div>
+        <div class="field">
+          <label for="div-amount">每股配息</label>
+          <input id="div-amount" type="number" min="0" step="0.0001" required>
+        </div>
+      </div>
+      <div class="modal-acts">
+        <button type="button" class="btn" id="div-close">關閉</button>
+        <button type="submit" class="btn primary" id="div-add">新增</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div class="modal-overlay" id="editTradeModal" hidden>
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="editTradeModalTitle">
     <h3 id="editTradeModalTitle">編輯交易紀錄</h3>
@@ -458,6 +499,17 @@ const fmt = (n, d = 0) =>
     : Number(n).toLocaleString("zh-TW", {minimumFractionDigits: d,
                                          maximumFractionDigits: d});
 const signed = (n) => (n > 0 ? "+" : "") + fmt(n);
+const latestExDividend = (list) => {
+  if (!list || !list.length) return "尚未登記除息";
+  const latest = list.slice().sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+  return `最近一筆：${latest.date}　配息 ${latest.amount}`;
+};
+const lotBreakdown = (lots) => {
+  if (!lots || !lots.length) return "";
+  return "配對成本：" + lots.map((l) =>
+    `${l.date}${l.source === "initial" ? "（建檔）" : l.source === "fallback" ? "（估）" : ""}`
+    + ` @${Number(l.price).toFixed(4)} × ${l.shares}股`).join("；");
+};
 
 const LABEL = {BUY:"買進", SELL:"賣出", HOLD:"觀望", REVIEW:"複核", SKIP:"略過"};
 const CLS   = {BUY:"buy", SELL:"sell", HOLD:"hold", REVIEW:"review", SKIP:"skip"};
@@ -497,6 +549,39 @@ function setBusy(on, label) {
   for (const id of ["fetch", "calc", "src", "addHolding", "openVerify", "openScan"]) $(id).disabled = on;
   if (label) $("calc").textContent = label;
   else $("calc").textContent = "重新計算";
+}
+
+// ── 逐筆進度條 ─────────────────────────────────────────
+function progressStart(total) {
+  $("progressWrap").hidden = false;
+  $("progressFill").style.width = "0%";
+  $("progressLabel").textContent = `0 / ${total}`;
+}
+function progressStep(done, total, ticker) {
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  $("progressFill").style.width = `${pct}%`;
+  $("progressLabel").textContent = `${done} / ${total}` + (ticker ? `　${ticker}` : "");
+}
+function progressEnd() { $("progressWrap").hidden = true; }
+
+// 依序（不是平行）逐一處理 items，每完成一筆就推進度條一格，避免對行情
+// 來源同時炸開一堆連線（TWSE 本來就有節流），也讓使用者看得到卡在哪一檔。
+async function runSequentially(items, tickerOf, worker) {
+  const total = items.length;
+  progressStart(total);
+  const results = [];
+  for (let i = 0; i < total; i++) {
+    const item = items[i];
+    progressStep(i, total, tickerOf(item));
+    try {
+      results.push({item, ok: true, value: await worker(item)});
+    } catch (err) {
+      results.push({item, ok: false, error: err});
+    }
+  }
+  progressStep(total, total, "");
+  progressEnd();
+  return results;
 }
 
 // ── 繪製 ───────────────────────────────────────────
@@ -605,9 +690,7 @@ function renderRows() {
       <td><span class="badge ${CLS[action]}">${LABEL[action]}</span></td>
       <td class="nm">${h.name}<span class="tk">${h.ticker}</span>
         <button class="btn tiny exdiv" data-t="${h.ticker}" data-n="${h.name}"
-          title="${h.exDividends && h.exDividends.length
-            ? '已登記：' + h.exDividends.map((e) => `${e.date} ${e.amount}`).join('；')
-            : '尚未登記除息'}">除息${h.exDividends && h.exDividends.length
+          title="${latestExDividend(h.exDividends)}">除息${h.exDividends && h.exDividends.length
             ? ` (${h.exDividends.length})` : ""}</button></td>
       <td class="n"><input class="px${px ? "" : " stale"}" type="number"
         step="0.01" min="0" inputmode="decimal" data-t="${h.ticker}"
@@ -643,7 +726,7 @@ function renderRows() {
   });
 
   $("rows").querySelectorAll(".exdiv").forEach((b) =>
-    b.addEventListener("click", () => recordExDividend(b.dataset)));
+    b.addEventListener("click", () => openDividendModal(b.dataset)));
   $("rows").querySelectorAll(".fill").forEach((b) =>
     b.addEventListener("click", () => openFillModal(b.dataset)));
 }
@@ -662,7 +745,8 @@ function renderTrades() {
       <td class="n">${t.rungs}</td>
       <td class="n">${fmt(t.fee)}</td>
       <td class="n">${fmt(t.tax)}</td>
-      <td class="n">${t.realizedPnl ? signed(t.realizedPnl) : "—"}</td>
+      <td class="n${t.action === "SELL" && t.consumedLots && t.consumedLots.length ? " lot-hint" : ""}"${t.action === "SELL" && t.consumedLots && t.consumedLots.length
+        ? ` title="${lotBreakdown(t.consumedLots)}"` : ""}>${t.realizedPnl ? signed(t.realizedPnl) : "—"}</td>
       <td class="why">${t.note || ""}</td>
       <td>
         <button class="btn tiny et-edit" data-id="${t.id}" data-date="${t.date}" data-ticker="${t.ticker}" data-action="${t.action}" data-shares="${t.shares}" data-price="${t.price}" data-rungs="${t.rungs}" data-fee="${t.fee}" data-tax="${t.tax}" data-pnl="${t.realizedPnl}" data-note="${t.note || ""}">編輯</button>
@@ -751,14 +835,22 @@ async function fetchQuotes() {
   setBusy(true);
   $("fetch").textContent = "抓取中…";
   try {
-    const res = await api("/api/quotes", {source: $("src").value});
-    Object.assign(state.prices, res.prices);
-    const n = Object.keys(res.prices).length;
-    const bad = Object.entries(res.errors);
+    const snap = state.snapshot;
+    const tickers = snap ? snap.holdings.filter((h) => h.enabled).map((h) => h.ticker) : [];
+    const src = $("src").value;
+    const results = await runSequentially(tickers, (t) => t,
+      (ticker) => api("/api/quote", {ticker, source: src}));
+
+    let n = 0;
+    const bad = [];
+    for (const r of results) {
+      if (r.ok) { state.prices[r.value.ticker] = r.value.price; n++; }
+      else bad.push([r.item, r.error.message]);
+    }
     if (bad.length)
       banner("err", `${bad.length} 檔取價失敗`,
         bad.map(([t, e]) => `${t}：${e}`).join("；"));
-    if (n) banner("info", "報價已更新", `${n} 檔取得成功，來源 ${res.source}。`);
+    if (n) banner("info", "報價已更新", `${n} 檔取得成功，來源 ${src}。`);
     renderRows();
     if (n) await calc();
   } catch (err) {
@@ -846,46 +938,98 @@ $("ff-cancel").addEventListener("click", closeFillModal);
 $("fillForm").addEventListener("submit", submitFill);
 $("fillModal").addEventListener("click", (e) => { if (e.target.id === "fillModal") closeFillModal(); });
 
-async function recordExDividend(ds) {
+// ── 除息紀錄 Dialog ───────────────────────────────────
+let divTicker = null;
+
+function openDividendModal(ds) {
   if (offline) return;
-  let suggestDate = new Date().toISOString().slice(0, 10);
-  let suggestAmount = "";
-  try {
-    const sug = await api("/api/dividend-suggestions",
-      {ticker: ds.t, source: $("src").value});
-    if (sug.new && sug.new.length) {
-      const pick = sug.new[sug.new.length - 1];
-      suggestDate = pick.date;
-      suggestAmount = String(pick.amount);
-      if (sug.new.length > 1)
-        banner("info", "抓到多筆除息事件",
-          `${ds.t} 來源有 ${sug.new.length} 筆尚未登記，先帶入最新一筆，`
-          + `其餘請重複點「除息」逐筆登記。`);
-    }
-  } catch (err) {
-    // 抓不到來源資料就退回手動輸入，不擋流程。
-  }
-  const exDate = prompt(`${ds.n}（${ds.t}）除息日？（YYYY-MM-DD）`, suggestDate);
-  if (!exDate) return;
-  const amountStr = prompt(`${ds.n} 每股配息金額？`, suggestAmount);
-  if (!amountStr) return;
-  const amount = parseFloat(amountStr);
+  divTicker = ds.t;
+  $("divModalTitle").textContent = `除息紀錄　${ds.n}（${ds.t}）`;
+  $("divAddForm").reset();
+  $("div-date").value = new Date().toISOString().slice(0, 10);
+  renderDivList();
+  $("divModal").hidden = false;
+}
+
+function closeDividendModal() { $("divModal").hidden = true; divTicker = null; }
+
+function currentHolding(ticker) {
+  const snap = state.snapshot;
+  return snap && snap.holdings ? snap.holdings.find((h) => h.ticker === ticker) : null;
+}
+
+function renderDivList() {
+  const h = currentHolding(divTicker);
+  const list = (h && h.exDividends ? h.exDividends.slice() : [])
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+  $("div-hint").textContent = list.length
+    ? `已登記 ${list.length} 筆，可直接修改後按「儲存」。`
+    : "尚未登記任何除息，請在下方新增。";
+  $("div-list").innerHTML = list.map((e, i) => `
+    <div class="field-row" data-old-date="${e.date}" style="align-items:flex-end">
+      <div class="field">
+        <label>除息日</label>
+        <input type="date" class="dv-date" value="${e.date}">
+      </div>
+      <div class="field">
+        <label>每股配息</label>
+        <input type="number" min="0" step="0.0001" class="dv-amount" value="${e.amount}">
+      </div>
+      <button type="button" class="btn tiny dv-save" data-old="${e.date}">儲存</button>
+    </div>`).join("");
+  $("div-list").querySelectorAll(".dv-save").forEach((b) =>
+    b.addEventListener("click", () => saveDividendEdit(b)));
+}
+
+async function saveDividendEdit(btn) {
+  const row = btn.closest(".field-row");
+  const oldDate = btn.dataset.old;
+  const newDate = row.querySelector(".dv-date").value;
+  const amount = parseFloat(row.querySelector(".dv-amount").value);
+  if (!newDate) { banner("err", "更新失敗", "除息日必填。"); return; }
   if (!Number.isFinite(amount) || amount <= 0) {
-    banner("err", "登記失敗", "配息金額必須是大於 0 的數字。");
+    banner("err", "更新失敗", "配息金額必須是大於 0 的數字。");
     return;
   }
-  setBusy(true, "登記中…");
+  btn.disabled = true;
   try {
-    await api("/api/ex-dividend", {ticker: ds.t, date: exDate, amount});
-    banner("info", "已登記除息",
-      `${ds.t} ${exDate} 配息 ${amount} 元，已寫入 portfolio.yaml，`
-      + `下次計算時會自動調整錨點。`);
+    await api("/api/ex-dividend-update",
+      {ticker: divTicker, oldDate, date: newDate, amount});
+    banner("info", "已更新除息", `${divTicker} ${newDate} 配息 ${amount} 元。`);
     state.snapshot = await api("/api/snapshot");
+    renderDivList();
+    renderAll();
+  } catch (err) {
+    banner("err", "更新失敗", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function addDividend(e) {
+  e.preventDefault();
+  const exDate = $("div-date").value;
+  const amount = parseFloat($("div-amount").value);
+  if (!exDate) { banner("err", "新增失敗", "除息日必填。"); return; }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    banner("err", "新增失敗", "配息金額必須是大於 0 的數字。");
+    return;
+  }
+  $("div-add").disabled = true;
+  try {
+    await api("/api/ex-dividend", {ticker: divTicker, date: exDate, amount});
+    banner("info", "已登記除息",
+      `${divTicker} ${exDate} 配息 ${amount} 元，已寫入 portfolio.yaml，`
+      + `下次計算時會自動調整錨點。`);
+    $("divAddForm").reset();
+    $("div-date").value = new Date().toISOString().slice(0, 10);
+    state.snapshot = await api("/api/snapshot");
+    renderDivList();
     renderAll();
   } catch (err) {
     banner("err", "登記失敗", err.message);
   } finally {
-    setBusy(false);
+    $("div-add").disabled = false;
   }
 }
 
@@ -1029,11 +1173,23 @@ function renderVerifyList() {
 
 async function runVerify() {
   $("verify-run").disabled = true;
-  $("verify-hint").textContent = "核對中…（依標的數量，可能要一陣子）";
+  const tickers = state.snapshot ? state.snapshot.holdings.map((h) => h.ticker) : [];
+  verifyResults = [];
+  renderVerifyList();
+  $("verify-hint").textContent = "核對中…";
   try {
-    const res = await api("/api/verify-tickers", {source: $("src").value});
-    verifyResults = res.results;
-    renderVerifyList();
+    const results = await runSequentially(tickers, (t) => t,
+      (ticker) => api("/api/verify-ticker", {ticker}));
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      const t = tickers[i];
+      const h = state.snapshot.holdings.find((x) => x.ticker === t);
+      verifyResults.push(r.ok ? r.value : {
+        ticker: t, name: h ? h.name : t,
+        status: "unresolved", actual: null, error: r.error.message,
+      });
+      renderVerifyList();
+    }
     const bad = verifyResults.filter((r) => r.status !== "ok").length;
     $("verify-hint").textContent = bad
       ? `${bad} 檔不符或查無資料，來源給英文名稱時常誤判，請自行判斷後再設為已驗證。`
@@ -1093,11 +1249,21 @@ function renderScanList() {
 
 async function runScan() {
   $("scan-run").disabled = true;
-  $("scan-hint").textContent = "掃描中…（依標的數量，可能要一陣子）";
+  const src = $("src").value;
+  const holdings = state.snapshot ? state.snapshot.holdings : [];
+  scanResults = [];
+  renderScanList();
+  $("scan-hint").textContent = "掃描中…";
   try {
-    const res = await api("/api/dividend-scan", {source: $("src").value});
-    scanResults = res.results;
-    renderScanList();
+    const results = await runSequentially(holdings, (h) => h.ticker,
+      (h) => api("/api/dividend-suggestions", {ticker: h.ticker, source: src}));
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      const h = holdings[i];
+      if (r.ok) scanResults.push({ticker: h.ticker, name: h.name, new: r.value.new});
+      else scanResults.push({ticker: h.ticker, name: h.name, new: [], error: r.error.message});
+      renderScanList();
+    }
     const n = scanResults.reduce((sum, r) => sum + r.new.length, 0);
     $("scan-hint").textContent = n
       ? `共發現 ${n} 筆新事件，核對無誤後按「登記」。`
@@ -1123,6 +1289,10 @@ async function registerScanned(ds) {
   }
 }
 
+$("div-close").addEventListener("click", closeDividendModal);
+$("divAddForm").addEventListener("submit", addDividend);
+$("divModal").addEventListener("click", (e) => { if (e.target.id === "divModal") closeDividendModal(); });
+
 $("openScan").addEventListener("click", openScanModal);
 $("scan-close").addEventListener("click", closeScanModal);
 $("scan-run").addEventListener("click", runScan);
@@ -1134,6 +1304,7 @@ document.addEventListener("keydown", (e) => {
   if (!$("fillModal").hidden) closeFillModal();
   if (!$("verifyModal").hidden) closeVerifyModal();
   if (!$("scanModal").hidden) closeScanModal();
+  if (!$("divModal").hidden) closeDividendModal();
   if (!$("editTradeModal").hidden) $("editTradeModal").hidden = true;
 });
 $("fetch").addEventListener("click", fetchQuotes);
