@@ -203,6 +203,8 @@ footer{margin-top:3rem;padding-top:1.1rem;border-top:1px solid var(--rule);
   <button class="btn" id="fetch">抓取報價</button>
   <button class="btn primary" id="calc">重新計算</button>
   <button class="btn" id="addHolding">+ 新增標的</button>
+  <button class="btn" id="openVerify">核對代號</button>
+  <button class="btn" id="openScan">掃描除息</button>
 </div></div>
 
 <div class="wrap">
@@ -228,7 +230,7 @@ footer{margin-top:3rem;padding-top:1.1rem;border-top:1px solid var(--rule);
         <thead><tr>
           <th>狀態</th><th>標的</th><th class="n">現價</th><th class="n">錨點</th>
           <th class="n">ATR%</th><th class="n">步長%</th><th class="n">一份</th>
-          <th>階數</th><th class="n">持股</th><th class="n">已實現</th><th>說明</th>
+          <th>階數</th><th class="n">持股</th><th class="n">已實現</th><th>說明</th><th></th>
         </tr></thead>
         <tbody id="rows"></tbody>
       </table>
@@ -292,6 +294,78 @@ footer{margin-top:3rem;padding-top:1.1rem;border-top:1px solid var(--rule);
   </div>
 </div>
 
+<div class="modal-overlay" id="fillModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="fillModalTitle">
+    <h3 id="fillModalTitle">回填成交</h3>
+    <form id="fillForm">
+      <div class="field"><label id="ff-label"></label></div>
+      <div class="field-row">
+        <div class="field">
+          <label for="ff-action">方向</label>
+          <select id="ff-action">
+            <option value="BUY">買進</option>
+            <option value="SELL">賣出</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="ff-shares">股數</label>
+          <input id="ff-shares" type="number" min="1" step="1" required>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="ff-price">實際成交價</label>
+          <input id="ff-price" type="number" min="0" step="0.01" required>
+        </div>
+        <div class="field">
+          <label for="ff-date">成交日</label>
+          <input id="ff-date" type="date">
+        </div>
+      </div>
+      <div class="preview" id="ff-note-review" hidden></div>
+      <div class="field">
+        <label for="ff-note">備註（選填）</label>
+        <input id="ff-note" placeholder="例如：人工確認跳空為除息後手動回填">
+      </div>
+      <div class="modal-acts">
+        <button type="button" class="btn" id="ff-cancel">取消</button>
+        <button type="submit" class="btn primary" id="ff-submit">確認回填</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="verifyModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="verifyModalTitle"
+    style="max-width:560px">
+    <h3 id="verifyModalTitle">核對股票代號</h3>
+    <div class="preview" id="verify-hint">
+      按「開始核對」用目前選的行情來源逐檔查詢登記名稱。
+      來源給英文名稱時常會誤判「不符」，僅供參考，請自行判斷後再設為已驗證。
+    </div>
+    <div id="verify-list"></div>
+    <div class="modal-acts">
+      <button type="button" class="btn" id="verify-close">關閉</button>
+      <button type="button" class="btn primary" id="verify-run">開始核對</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="scanModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="scanModalTitle"
+    style="max-width:560px">
+    <h3 id="scanModalTitle">掃描全部除息</h3>
+    <div class="preview" id="scan-hint">
+      按「開始掃描」用目前選的行情來源逐檔查詢股利事件，只列出尚未登記的。
+    </div>
+    <div id="scan-list"></div>
+    <div class="modal-acts">
+      <button type="button" class="btn" id="scan-close">關閉</button>
+      <button type="button" class="btn primary" id="scan-run">開始掃描</button>
+    </div>
+  </div>
+</div>
+
 <script id="embedded" type="application/json">null</script>
 <script>
 (() => {
@@ -340,7 +414,7 @@ function clearBanners() { $("banners").textContent = ""; }
 
 function setBusy(on, label) {
   state.busy = on;
-  for (const id of ["fetch", "calc", "src", "addHolding"]) $(id).disabled = on;
+  for (const id of ["fetch", "calc", "src", "addHolding", "openVerify", "openScan"]) $(id).disabled = on;
   if (label) $("calc").textContent = label;
   else $("calc").textContent = "重新計算";
 }
@@ -402,17 +476,17 @@ function renderOrders() {
       <div class="sub">現金流 ${signed(d.cashFlow)}${
         d.realizedPnl !== null ? `　實現 ${signed(d.realizedPnl)}` : ""}</div>
       <div class="acts">
-        <button class="btn tiny fill" data-t="${d.ticker}" data-a="${d.action}"
-          data-s="${d.shares}" data-p="${d.price}" data-r="${d.rungs}"
-          data-step="${d.step}">全部成交</button>
-        <button class="btn tiny fill" data-t="${d.ticker}" data-a="${d.action}"
-          data-s="${d.lotShares}" data-p="${d.price}" data-r="1"
-          data-step="${d.step}">成交 1 份</button>
+        <button class="btn tiny fill" data-t="${d.ticker}" data-n="${d.name}"
+          data-a="${d.action}" data-s="${d.shares}" data-p="${d.price}"
+          data-r="${d.rungs}" data-step="${d.step}">全部成交</button>
+        <button class="btn tiny fill" data-t="${d.ticker}" data-n="${d.name}"
+          data-a="${d.action}" data-s="${d.lotShares}" data-p="${d.price}"
+          data-r="1" data-step="${d.step}">成交 1 份</button>
       </div>
     </div>`).join("");
 
   box.querySelectorAll(".fill").forEach((b) =>
-    b.addEventListener("click", () => recordFill(b.dataset)));
+    b.addEventListener("click", () => openFillModal(b.dataset)));
 }
 
 function renderRows() {
@@ -457,6 +531,10 @@ function renderRows() {
       <td class="n">${fmt(h.shares)}</td>
       <td class="n">${h.realizedPnl ? signed(h.realizedPnl) : "—"}</td>
       <td class="why">${why || "—"}</td>
+      <td><button class="btn tiny fill" data-t="${h.ticker}" data-n="${h.name}"
+        data-a="${(px !== undefined ? px : h.anchor) > h.anchor ? "SELL" : "BUY"}"
+        data-s="${h.lotShares}" data-p="${px !== undefined ? px : h.anchor}"
+        data-r="1" data-step="${d ? d.step : 0}">回填</button></td>
     </tr>`;
   }).join("");
 
@@ -474,6 +552,8 @@ function renderRows() {
 
   $("rows").querySelectorAll(".exdiv").forEach((b) =>
     b.addEventListener("click", () => recordExDividend(b.dataset)));
+  $("rows").querySelectorAll(".fill").forEach((b) =>
+    b.addEventListener("click", () => openFillModal(b.dataset)));
 }
 
 function renderAll() { renderCards(); renderOrders(); renderRows(); }
@@ -499,7 +579,7 @@ async function loadSnapshot() {
   }
   const snap = state.snapshot;
   $("src").value = snap.providerKind || "auto";
-  if (offline) for (const id of ["fetch", "calc", "src", "addHolding"]) $(id).disabled = true;
+  if (offline) for (const id of ["fetch", "calc", "src", "addHolding", "openVerify", "openScan"]) $(id).disabled = true;
 
   if (snap.unverified > 0)
     banner("info", "代號尚未驗證",
@@ -550,27 +630,67 @@ async function calc() {
   }
 }
 
-async function recordFill(ds) {
-  const label = ds.a === "BUY" ? "買進" : "賣出";
-  if (!confirm(`確認回填：${label} ${ds.t} ${ds.s} 股 @ ${Number(ds.p).toFixed(2)}？`
-      + `\n這會更新錨點與持股，動作無法在頁面上還原。`)) return;
-  setBusy(true, "回填中…");
+let fillCtx = {ticker: "", name: "", step: 0};
+
+function openFillModal(ds) {
+  fillCtx = {ticker: ds.t, name: ds.n || ds.t, step: Number(ds.step) || 0};
+  $("ff-label").textContent = `${fillCtx.name}（${fillCtx.ticker}）`;
+  $("ff-action").value = ds.a === "SELL" ? "SELL" : "BUY";
+  $("ff-shares").value = ds.s || "";
+  $("ff-price").value = ds.p || "";
+  $("ff-date").value = new Date().toISOString().slice(0, 10);
+  $("ff-note").value = "";
+  const d = state.advice
+    ? state.advice.decisions.find((x) => x.ticker === fillCtx.ticker) : null;
+  const reviewNote = $("ff-note-review");
+  if (d && d.action === "REVIEW" && d.blocks.length) {
+    reviewNote.hidden = false;
+    reviewNote.innerHTML = "此標的目前是「複核」狀態：<br>" +
+      d.blocks.map((b) => "✗ " + b).join("<br>") +
+      "<br>請先人工確認無誤再送出，這個回填不會再經過跳空／風控檢查。";
+  } else {
+    reviewNote.hidden = true;
+  }
+  $("fillModal").hidden = false;
+  $("ff-shares").focus();
+}
+
+function closeFillModal() { $("fillModal").hidden = true; }
+
+async function submitFill(evt) {
+  evt.preventDefault();
+  const action = $("ff-action").value;
+  const shares = parseInt($("ff-shares").value, 10);
+  const price = parseFloat($("ff-price").value);
+  if (!Number.isInteger(shares) || shares <= 0) {
+    banner("err", "回填失敗", "股數必須是大於 0 的整數。"); return;
+  }
+  if (!Number.isFinite(price) || price <= 0) {
+    banner("err", "回填失敗", "成交價必須是大於 0 的數字。"); return;
+  }
+  $("ff-submit").disabled = true;
   try {
     const res = await api("/api/record", {
-      ticker: ds.t, action: ds.a, shares: Number(ds.s),
-      price: Number(ds.p), rungs: Number(ds.r), step: Number(ds.step),
+      ticker: fillCtx.ticker, action, shares, price,
+      step: fillCtx.step, date: $("ff-date").value || undefined,
+      note: $("ff-note").value || undefined,
     });
+    closeFillModal();
     banner("info", "已回填",
-      `${ds.t} 新錨點 ${res.anchor}，階數 ${res.rung >= 0 ? "+" : ""}${res.rung}，`
+      `${fillCtx.ticker} 新錨點 ${res.anchor}，階數 ${res.rung >= 0 ? "+" : ""}${res.rung}，`
       + `持股 ${fmt(res.shares)} 股，現金 ${fmt(res.cash)} 元。`);
     state.snapshot = await api("/api/snapshot");
     await calc();
   } catch (err) {
     banner("err", "回填失敗", err.message);
   } finally {
-    setBusy(false);
+    $("ff-submit").disabled = false;
   }
 }
+
+$("ff-cancel").addEventListener("click", closeFillModal);
+$("fillForm").addEventListener("submit", submitFill);
+$("fillModal").addEventListener("click", (e) => { if (e.target.id === "fillModal") closeFillModal(); });
 
 async function recordExDividend(ds) {
   if (offline) return;
@@ -726,8 +846,140 @@ $("af-quote").addEventListener("click", quoteForAdd);
 $("af-calc").addEventListener("click", previewForAdd);
 $("addForm").addEventListener("submit", submitAdd);
 $("addModal").addEventListener("click", (e) => { if (e.target.id === "addModal") closeAddModal(); });
+
+// ── 核對代號 ─────────────────────────────────────────
+let verifyResults = [];
+
+function openVerifyModal() {
+  $("verifyModal").hidden = false;
+}
+function closeVerifyModal() { $("verifyModal").hidden = true; }
+
+function renderVerifyList() {
+  $("verify-list").innerHTML = verifyResults.length ? verifyResults.map((r) => {
+    const badge = r.status === "ok" ? '<span class="badge buy">相符</span>'
+      : r.status === "mismatch" ? '<span class="badge sell">不符</span>'
+      : '<span class="badge hold">查無</span>';
+    return `<div class="preview" style="display:flex;justify-content:space-between;
+        align-items:center;gap:.6rem">
+      <div>${badge} <b>${r.ticker}</b> ${r.name}<br>
+        <span class="muted">${r.actual || r.error || "—"}</span></div>
+      <button class="btn tiny setverified" data-t="${r.ticker}"
+        data-v="${r.verified ? "0" : "1"}">
+        ${r.verified ? "取消驗證" : "設為已驗證"}</button>
+    </div>`;
+  }).join("") : `<div class="empty">按「開始核對」查詢。</div>`;
+  $("verify-list").querySelectorAll(".setverified").forEach((b) =>
+    b.addEventListener("click", () => toggleVerified(b.dataset)));
+}
+
+async function runVerify() {
+  $("verify-run").disabled = true;
+  $("verify-hint").textContent = "核對中…（依標的數量，可能要一陣子）";
+  try {
+    const res = await api("/api/verify-tickers", {source: $("src").value});
+    verifyResults = res.results;
+    renderVerifyList();
+    const bad = verifyResults.filter((r) => r.status !== "ok").length;
+    $("verify-hint").textContent = bad
+      ? `${bad} 檔不符或查無資料，來源給英文名稱時常誤判，請自行判斷後再設為已驗證。`
+      : "全部相符。";
+  } catch (err) {
+    $("verify-hint").textContent = "核對失敗：" + err.message;
+  } finally {
+    $("verify-run").disabled = false;
+  }
+}
+
+async function toggleVerified(ds) {
+  const verified = ds.v === "1";
+  try {
+    await api("/api/set-verified", {ticker: ds.t, verified});
+    const r = verifyResults.find((x) => x.ticker === ds.t);
+    if (r) r.verified = verified;
+    renderVerifyList();
+    banner("info", "已更新",
+      `${ds.t} ticker_verified 改成 ${verified ? "true" : "false"}。`);
+    state.snapshot = await api("/api/snapshot");
+    renderAll();
+  } catch (err) {
+    banner("err", "更新失敗", err.message);
+  }
+}
+
+$("openVerify").addEventListener("click", openVerifyModal);
+$("verify-close").addEventListener("click", closeVerifyModal);
+$("verify-run").addEventListener("click", runVerify);
+$("verifyModal").addEventListener("click", (e) => {
+  if (e.target.id === "verifyModal") closeVerifyModal();
+});
+
+// ── 掃描除息 ─────────────────────────────────────────
+let scanResults = [];
+
+function openScanModal() { $("scanModal").hidden = false; }
+function closeScanModal() { $("scanModal").hidden = true; }
+
+function renderScanList() {
+  const rows = scanResults.filter((r) => r.new.length || r.error);
+  $("scan-list").innerHTML = rows.length ? rows.map((r) => `
+    <div class="preview">
+      <b>${r.ticker}</b> ${r.name}
+      ${r.error ? `<br><span class="muted">${r.error}</span>` : r.new.map((e) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;
+            margin-top:.35rem">
+          <span>${e.date}　配息 ${e.amount}</span>
+          <button class="btn tiny scanreg" data-t="${r.ticker}"
+            data-d="${e.date}" data-a="${e.amount}">登記</button>
+        </div>`).join("")}
+    </div>`).join("") : `<div class="empty">沒有新發現的除息（或還沒掃描）。</div>`;
+  $("scan-list").querySelectorAll(".scanreg").forEach((b) =>
+    b.addEventListener("click", () => registerScanned(b.dataset)));
+}
+
+async function runScan() {
+  $("scan-run").disabled = true;
+  $("scan-hint").textContent = "掃描中…（依標的數量，可能要一陣子）";
+  try {
+    const res = await api("/api/dividend-scan", {source: $("src").value});
+    scanResults = res.results;
+    renderScanList();
+    const n = scanResults.reduce((sum, r) => sum + r.new.length, 0);
+    $("scan-hint").textContent = n
+      ? `共發現 ${n} 筆新事件，核對無誤後按「登記」。`
+      : "沒有發現尚未登記的除息事件。";
+  } catch (err) {
+    $("scan-hint").textContent = "掃描失敗：" + err.message;
+  } finally {
+    $("scan-run").disabled = false;
+  }
+}
+
+async function registerScanned(ds) {
+  try {
+    await api("/api/ex-dividend", {ticker: ds.t, date: ds.d, amount: Number(ds.a)});
+    const r = scanResults.find((x) => x.ticker === ds.t);
+    if (r) r.new = r.new.filter((e) => !(e.date === ds.d && String(e.amount) === ds.a));
+    renderScanList();
+    banner("info", "已登記", `${ds.t} ${ds.d} 配息 ${ds.a} 元。`);
+    state.snapshot = await api("/api/snapshot");
+    renderAll();
+  } catch (err) {
+    banner("err", "登記失敗", err.message);
+  }
+}
+
+$("openScan").addEventListener("click", openScanModal);
+$("scan-close").addEventListener("click", closeScanModal);
+$("scan-run").addEventListener("click", runScan);
+$("scanModal").addEventListener("click", (e) => { if (e.target.id === "scanModal") closeScanModal(); });
+
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !$("addModal").hidden) closeAddModal();
+  if (e.key !== "Escape") return;
+  if (!$("addModal").hidden) closeAddModal();
+  if (!$("fillModal").hidden) closeFillModal();
+  if (!$("verifyModal").hidden) closeVerifyModal();
+  if (!$("scanModal").hidden) closeScanModal();
 });
 $("fetch").addEventListener("click", fetchQuotes);
 $("calc").addEventListener("click", () => { clearBanners(); calc(); });

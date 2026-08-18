@@ -289,6 +289,29 @@ def add_holding(
 _TICKER_LINE = re.compile(r'^(\s*)-\s*ticker:\s*["\']?([^"\'\s]+)["\']?\s*$')
 
 
+def _find_holding_block(
+    lines: list[str], path: Path, ticker: str
+) -> tuple[int, int, str]:
+    """回傳 ``(start, end, indent)``：該檔持股在 YAML 裡的行範圍與縮排。"""
+    start = None
+    indent = ""
+    for i, line in enumerate(lines):
+        m = _TICKER_LINE.match(line)
+        if m and m.group(2) == ticker:
+            start = i
+            indent = m.group(1)
+            break
+    if start is None:
+        raise ConfigError(f"{ticker} 不在 {path} 中")
+
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        if _TICKER_LINE.match(lines[j]):
+            end = j
+            break
+    return start, end, indent
+
+
 def add_ex_dividend(
     path: Path | str, ticker: str, ex_date: str, amount: float
 ) -> None:
@@ -311,23 +334,7 @@ def add_ex_dividend(
 
     path = Path(path)
     lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-
-    start = None
-    indent = ""
-    for i, line in enumerate(lines):
-        m = _TICKER_LINE.match(line)
-        if m and m.group(2) == ticker:
-            start = i
-            indent = m.group(1)
-            break
-    if start is None:
-        raise ConfigError(f"{ticker} 不在 {path} 中")
-
-    end = len(lines)
-    for j in range(start + 1, len(lines)):
-        if _TICKER_LINE.match(lines[j]):
-            end = j
-            break
+    start, end, indent = _find_holding_block(lines, path, ticker)
 
     field_indent = indent + "  "
     entry_indent = field_indent + "  "
@@ -350,6 +357,32 @@ def add_ex_dividend(
         block[trim:trim] = [f"{field_indent}ex_dividends:\n", new_entry]
 
     lines[start:end] = block
+    path.write_text("".join(lines), encoding="utf-8")
+    load_portfolio(path)  # 寫完立刻重讀驗證，寫壞了馬上知道
+
+
+_TICKER_VERIFIED_LINE = re.compile(r"^(\s*)ticker_verified:\s*\S+\s*$")
+
+
+def set_ticker_verified(path: Path | str, ticker: str, verified: bool) -> None:
+    """把某檔持股的 ``ticker_verified`` 改成 true/false（就地改檔，保留排版）。
+
+    這一步永遠是人工判斷：`atrgrid verify-tickers` 只能用寬鬆字串比對名稱，
+    英文來源名稱時本來就會誤判（見 CLAUDE.md 的已知地雷），所以系統不會自動
+    翻這個欄位，只提供這個函式讓使用者在自己看過核對結果後手動翻。
+    """
+    path = Path(path)
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    start, end, _indent = _find_holding_block(lines, path, ticker)
+
+    for i in range(start, end):
+        m = _TICKER_VERIFIED_LINE.match(lines[i])
+        if m:
+            lines[i] = f"{m.group(1)}ticker_verified: {'true' if verified else 'false'}\n"
+            break
+    else:
+        raise ConfigError(f"{ticker} 沒有 ticker_verified 欄位，portfolio.yaml 可能壞了")
+
     path.write_text("".join(lines), encoding="utf-8")
     load_portfolio(path)  # 寫完立刻重讀驗證，寫壞了馬上知道
 

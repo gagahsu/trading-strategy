@@ -35,6 +35,7 @@ from .config import (
     load_portfolio,
     load_settings,
     resolve_params,
+    set_ticker_verified,
 )
 from .data import DataError, PriceProvider, make_provider
 from .engine import BUY, SELL, Decision, evaluate, grid_step, lot_size, next_grid_levels
@@ -511,6 +512,74 @@ class GridService:
             "exDividends": holding.ex_dividends,
         }
 
+    def verify_tickers(self, kind: str | None = None) -> dict[str, Any]:
+        """核對 portfolio.yaml 的代號跟行情來源登記名稱是否相符。
+
+        跟 CLI 的 `atrgrid verify-tickers` 同一套寬鬆比對（中文簡稱互相包含），
+        來源給英文名稱（例如 Yahoo 的 longName）時本來就會誤判 —— 見
+        CLAUDE.md 的已知地雷。所以這裡只回報，不自動改 ticker_verified，
+        要靠 :meth:`set_verified` 讓使用者自己看過再翻。
+        """
+        provider = self.provider(kind)
+        results = []
+        for holding in self.portfolio().holdings:
+            try:
+                actual = provider.security_name(holding.ticker)
+            except DataError as exc:
+                results.append(
+                    {"ticker": holding.ticker, "name": holding.name,
+                     "status": "unresolved", "actual": None, "error": str(exc)}
+                )
+                continue
+            if actual is None:
+                results.append(
+                    {"ticker": holding.ticker, "name": holding.name,
+                     "status": "unresolved", "actual": None, "error": "查無此代號"}
+                )
+                continue
+            stripped = holding.name.replace(" ", "")
+            ok = stripped in actual.replace(" ", "") or actual.replace(" ", "") in stripped
+            results.append(
+                {
+                    "ticker": holding.ticker, "name": holding.name,
+                    "status": "ok" if ok else "mismatch",
+                    "actual": actual, "verified": holding.ticker_verified,
+                }
+            )
+        return {"results": results}
+
+    def set_verified(self, ticker: str, verified: bool) -> dict[str, Any]:
+        """人工核對後，手動把某檔的 ticker_verified 翻成 true/false。"""
+        with self.lock:
+            portfolio_path = self.config_dir / "portfolio.yaml"
+            try:
+                set_ticker_verified(portfolio_path, ticker, verified)
+            except ConfigError as exc:
+                raise ApiError(str(exc)) from exc
+        return {"ok": True, "ticker": ticker, "verified": verified}
+
+    def dividend_scan_all(self, kind: str | None = None) -> dict[str, Any]:
+        """掃全部持股的股利事件，回傳每檔尚未登記的新發現（唯讀，不寫檔）。
+
+        跟 :meth:`dividend_suggestions` 是同一顆函式，只是這裡一次跑全部標的，
+        給「掃描全部除息」按鈕用（CLI 對應 `atrgrid dividends`）。
+        """
+        results = []
+        for holding in self.portfolio().holdings:
+            try:
+                found = self.dividend_suggestions(holding.ticker, kind)
+            except ApiError as exc:
+                results.append(
+                    {"ticker": holding.ticker, "name": holding.name,
+                     "new": [], "error": str(exc)}
+                )
+                continue
+            if found["new"]:
+                results.append(
+                    {"ticker": holding.ticker, "name": holding.name, "new": found["new"]}
+                )
+        return {"results": results}
+
     def set_cash(self, amount: float) -> dict[str, Any]:
         with self.lock:
             state = load_state(self.state_path)
@@ -632,6 +701,22 @@ def make_handler(service: GridService):
                         raise ApiError("ticker 必填")
                     return service.dividend_suggestions(ticker, body.get("source"))
                 self._dispatch(run_div)
+            elif path == "/api/dividend-scan":
+                self._dispatch(
+                    lambda: service.dividend_scan_all(self._body().get("source"))
+                )
+            elif path == "/api/verify-tickers":
+                self._dispatch(
+                    lambda: service.verify_tickers(self._body().get("source"))
+                )
+            elif path == "/api/set-verified":
+                def run_set_verified():
+                    body = self._body()
+                    ticker = str(body.get("ticker", "")).strip()
+                    if not ticker:
+                        raise ApiError("ticker 必填")
+                    return service.set_verified(ticker, bool(body.get("verified")))
+                self._dispatch(run_set_verified)
             elif path == "/api/cash":
                 self._dispatch(
                     lambda: service.set_cash(float(self._body().get("cash", 0)))
