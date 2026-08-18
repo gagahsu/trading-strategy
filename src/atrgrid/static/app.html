@@ -560,10 +560,10 @@ function renderOrders() {
       <div class="acts">
         <button class="btn tiny fill" data-t="${d.ticker}" data-n="${d.name}"
           data-a="${d.action}" data-s="${d.shares}" data-p="${d.price}"
-          data-r="${d.rungs}" data-step="${d.step}">全部成交</button>
+          data-r="${d.rungs}" data-step="${d.step}" data-cf="${d.cashFlow}">全部成交</button>
         <button class="btn tiny fill" data-t="${d.ticker}" data-n="${d.name}"
           data-a="${d.action}" data-s="${d.lotShares}" data-p="${d.price}"
-          data-r="1" data-step="${d.step}">成交 1 份</button>
+          data-r="1" data-step="${d.step}" data-cf="${d.cashFlow}">成交 1 份</button>
       </div>
     </div>`;
   }).join("");
