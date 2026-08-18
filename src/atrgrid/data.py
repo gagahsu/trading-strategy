@@ -1,11 +1,12 @@
 """行情資料來源。
 
-兩個 provider：
+* :class:`YahooProvider`   ── Yahoo Finance，一次呼叫同時給日 K 與盤中價
+* :class:`FinMindProvider` ── FinMind 開放資料（日 K；免費方案無盤中報價）
+* :class:`TwseProvider`    ── 證交所公開 API（日 K、盤中價、名稱驗證）
+* :class:`CsvProvider`     ── 讀本地 CSV，離線測試與回測用
+* :class:`ChainProvider`   ── 依序嘗試多個來源，第一個成功的採用
 
-* :class:`TwseProvider` ── 證交所公開 API（日 K + 盤中即時價 + 名稱驗證）
-* :class:`CsvProvider`  ── 讀本地 CSV，離線測試與回測用
-
-證交所 API 沒有正式的服務水準保證，也有流量限制，所以每次呼叫之間會停頓，
+這些都不是有服務水準保證的 API，也都有流量限制，所以每次呼叫之間會停頓，
 且日 K 會快取到 ``data/cache/``。
 """
 
@@ -13,14 +14,23 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from .indicators import Bar
+
+try:  # Python 3.9+ 標準庫；缺 tzdata 的精簡環境則退回固定偏移
+    from zoneinfo import ZoneInfo
+
+    TAIPEI = ZoneInfo("Asia/Taipei")
+except Exception:  # pragma: no cover - 視執行環境而定
+    TAIPEI = timezone(timedelta(hours=8))
 
 USER_AGENT = "Mozilla/5.0 (compatible; atrgrid/1.0; +https://github.com/)"
 TWSE_DAILY = "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY"
@@ -257,19 +267,40 @@ def _parse_twse_row(row: list[str]) -> Bar:
     )
 
 
+#: 可用的行情來源名稱
+PROVIDER_KINDS = ("yahoo", "finmind", "twse", "auto", "csv")
+
+
 def make_provider(
     kind: str,
     csv_dir: Path | str | None = None,
     cache_dir: Path | str | None = None,
     live_overrides: dict[str, float] | None = None,
+    market: dict[str, str] | None = None,
+    finmind_token: str | None = None,
 ) -> PriceProvider:
+    """依名稱建立行情來源。
+
+    ``auto`` 會串起 Yahoo → 證交所 → FinMind：Yahoo 一次給日 K 與盤中價，
+    證交所補上 Yahoo 查不到的台股冷門標的，FinMind 作為最後備援。
+    """
+    if kind == "yahoo":
+        return YahooProvider(cache_dir=cache_dir, market=market)
+    if kind == "finmind":
+        return FinMindProvider(token=finmind_token, cache_dir=cache_dir)
     if kind == "twse":
         return TwseProvider(cache_dir=cache_dir)
+    if kind == "auto":
+        return ChainProvider([
+            YahooProvider(cache_dir=cache_dir, market=market),
+            TwseProvider(cache_dir=cache_dir),
+            FinMindProvider(token=finmind_token, cache_dir=cache_dir),
+        ])
     if kind == "csv":
         if csv_dir is None:
             raise DataError("csv provider 需要指定 --csv-dir")
         return CsvProvider(csv_dir, live_overrides=live_overrides)
-    raise DataError(f"未知的 provider：{kind}")
+    raise DataError(f"未知的 provider：{kind}（可用：{', '.join(PROVIDER_KINDS)}）")
 
 
 def export_csv(bars: list[Bar], path: Path | str) -> None:
@@ -294,3 +325,295 @@ def parse_date(value: str) -> str:
         except ValueError:
             continue
     raise ValueError(f"無法解析日期：{value}")
+
+
+# ------------------------------------------------------------------- Yahoo
+
+
+class YahooProvider(PriceProvider):
+    """Yahoo Finance 行情。
+
+    ``/v8/finance/chart`` 一次呼叫就同時給出日 K 與盤中最新價，是這套系統
+    在 13:00 取價最省事的來源。
+
+    台股代號要加後綴：上市 ``.TW``、上櫃 ``.TWO``。若沒指定市場別，兩個都試。
+    """
+
+    BASE = "https://query1.finance.yahoo.com/v8/finance/chart"
+
+    def __init__(
+        self,
+        cache_dir: Path | str | None = None,
+        throttle: float = 1.0,
+        cache_ttl_hours: float = 12.0,
+        market: dict[str, str] | None = None,
+    ) -> None:
+        self.cache_dir = Path(cache_dir) if cache_dir else None
+        self.throttle = throttle
+        self.cache_ttl_hours = cache_ttl_hours
+        self.market = market or {}
+        self._last_call = 0.0
+        self._chart_cache: dict[str, dict] = {}
+
+    # ------------------------------------------------------------ 內部
+    def _suffixes(self, ticker: str) -> list[str]:
+        market = self.market.get(ticker)
+        if market == "otc":
+            return [".TWO"]
+        if market == "listed":
+            return [".TW"]
+        return [".TW", ".TWO"]
+
+    def _wait(self) -> None:
+        elapsed = time.time() - self._last_call
+        if elapsed < self.throttle:
+            time.sleep(self.throttle - elapsed)
+        self._last_call = time.time()
+
+    def _chart(self, ticker: str, rng: str = "2y") -> dict:
+        key = f"{ticker}:{rng}"
+        if key in self._chart_cache:
+            return self._chart_cache[key]
+
+        errors: list[str] = []
+        for suffix in self._suffixes(ticker):
+            url = f"{self.BASE}/{ticker}{suffix}?range={rng}&interval=1d"
+            self._wait()
+            try:
+                payload = _http_get_json(url)
+            except DataError as exc:
+                errors.append(f"{suffix}: {exc}")
+                continue
+            chart = payload.get("chart") or {}
+            if chart.get("error"):
+                errors.append(f"{suffix}: {chart['error']}")
+                continue
+            results = chart.get("result") or []
+            if not results:
+                errors.append(f"{suffix}: 無資料")
+                continue
+            self._chart_cache[key] = results[0]
+            return results[0]
+        raise DataError(f"{ticker}：Yahoo 查無資料（{'; '.join(errors)}）")
+
+    # ------------------------------------------------------------ 介面
+    def daily_bars(self, ticker: str, months: int = 12) -> list[Bar]:
+        cached = _read_bar_cache(self.cache_dir, ticker, self.cache_ttl_hours)
+        if cached is not None:
+            return cached
+
+        rng = "2y" if months > 12 else "1y"
+        result = self._chart(ticker, rng)
+        stamps = result.get("timestamp") or []
+        quote = ((result.get("indicators") or {}).get("quote") or [{}])[0]
+
+        today = date.today().isoformat()
+        bars: list[Bar] = []
+        for i, stamp in enumerate(stamps):
+            row = [quote.get(k, [])[i] if i < len(quote.get(k, [])) else None
+                   for k in ("open", "high", "low", "close", "volume")]
+            if any(v is None for v in row[:4]):
+                continue  # 停牌或無成交
+            open_, high, low, close, volume = row
+            iso = _epoch_to_taipei_date(stamp)
+            if iso >= today:
+                continue  # 今天的 K 棒還沒收，不能拿來算 ATR
+            bars.append(
+                Bar(
+                    date=iso,
+                    open=float(open_),
+                    high=float(high),
+                    low=float(low),
+                    close=float(close),
+                    volume=float(volume or 0),
+                )
+            )
+        if not bars:
+            raise DataError(f"{ticker}：Yahoo 回傳的日 K 是空的")
+        bars.sort(key=lambda b: b.date)
+        _write_bar_cache(self.cache_dir, ticker, bars)
+        return bars
+
+    def live_price(self, ticker: str) -> float:
+        meta = self._chart(ticker).get("meta") or {}
+        for key in ("regularMarketPrice", "previousClose", "chartPreviousClose"):
+            value = meta.get(key)
+            if value:
+                return float(value)
+        raise DataError(f"{ticker}：Yahoo 沒有回傳可用的價格欄位")
+
+    def security_name(self, ticker: str) -> str | None:
+        meta = self._chart(ticker).get("meta") or {}
+        name = meta.get("longName") or meta.get("shortName")
+        return str(name).strip() if name else None
+
+
+# ----------------------------------------------------------------- FinMind
+
+
+class FinMindProvider(PriceProvider):
+    """FinMind 開放資料 API。
+
+    免費方案有每小時請求上限，且日線資料為收盤後更新 —— 盤中取價請搭配
+    Yahoo 或證交所。註冊後可在 https://finmindtrade.com 取得 token，
+    以環境變數 ``FINMIND_TOKEN`` 提供。
+    """
+
+    BASE = "https://api.finmindtrade.com/api/v4/data"
+
+    def __init__(
+        self,
+        token: str | None = None,
+        cache_dir: Path | str | None = None,
+        throttle: float = 1.0,
+        cache_ttl_hours: float = 12.0,
+    ) -> None:
+        self.token = token or os.environ.get("FINMIND_TOKEN", "")
+        self.cache_dir = Path(cache_dir) if cache_dir else None
+        self.throttle = throttle
+        self.cache_ttl_hours = cache_ttl_hours
+        self._last_call = 0.0
+        self._names: dict[str, str] | None = None
+
+    def _wait(self) -> None:
+        elapsed = time.time() - self._last_call
+        if elapsed < self.throttle:
+            time.sleep(self.throttle - elapsed)
+        self._last_call = time.time()
+
+    def _query(self, dataset: str, **params: str) -> list[dict]:
+        query = {"dataset": dataset, **params}
+        if self.token:
+            query["token"] = self.token
+        url = f"{self.BASE}?{urllib.parse.urlencode(query)}"
+        self._wait()
+        payload = _http_get_json(url)
+        if payload.get("status") not in (200, "200", None):
+            raise DataError(
+                f"FinMind {dataset} 回應 {payload.get('status')}：{payload.get('msg')}"
+            )
+        return payload.get("data") or []
+
+    def daily_bars(self, ticker: str, months: int = 12) -> list[Bar]:
+        cached = _read_bar_cache(self.cache_dir, ticker, self.cache_ttl_hours)
+        if cached is not None:
+            return cached
+
+        start = (date.today() - timedelta(days=int(months * 31))).isoformat()
+        rows = self._query(
+            "TaiwanStockPrice", data_id=ticker, start_date=start
+        )
+        today = date.today().isoformat()
+        bars: list[Bar] = []
+        for row in rows:
+            iso = str(row["date"])
+            if iso >= today:
+                continue
+            try:
+                # FinMind 用 max / min 而非 high / low
+                bars.append(
+                    Bar(
+                        date=iso,
+                        open=float(row["open"]),
+                        high=float(row["max"]),
+                        low=float(row["min"]),
+                        close=float(row["close"]),
+                        volume=float(row.get("Trading_Volume") or 0),
+                    )
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+        if not bars:
+            raise DataError(f"{ticker}：FinMind 沒有回傳日 K（確認代號與 token）")
+        bars.sort(key=lambda b: b.date)
+        _write_bar_cache(self.cache_dir, ticker, bars)
+        return bars
+
+    def live_price(self, ticker: str) -> float:
+        """FinMind 免費方案沒有盤中報價，回傳最近一個收盤價。"""
+        bars = self.daily_bars(ticker, months=2)
+        return bars[-1].close
+
+    def security_name(self, ticker: str) -> str | None:
+        if self._names is None:
+            try:
+                rows = self._query("TaiwanStockInfo")
+            except DataError:
+                return None
+            self._names = {
+                str(r.get("stock_id")): str(r.get("stock_name", "")).strip()
+                for r in rows
+            }
+        return self._names.get(ticker) or None
+
+
+# ------------------------------------------------------------------- 串接
+
+
+class ChainProvider(PriceProvider):
+    """依序嘗試多個來源，第一個成功的就採用。
+
+    實務上很有用：日 K 用 FinMind 或 Yahoo，盤中價用證交所，任何一家掛掉
+    還有備援。所有來源都失敗時，錯誤訊息會列出每一家的原因。
+    """
+
+    def __init__(self, providers: list[PriceProvider]) -> None:
+        if not providers:
+            raise DataError("ChainProvider 至少需要一個來源")
+        self.providers = providers
+
+    def _try(self, method: str, ticker: str, *args):
+        errors: list[str] = []
+        for provider in self.providers:
+            try:
+                return getattr(provider, method)(ticker, *args)
+            except (DataError, KeyError, ValueError, TypeError) as exc:
+                errors.append(f"{type(provider).__name__}: {exc}")
+        raise DataError(f"{ticker}：所有來源皆失敗（{'; '.join(errors)}）")
+
+    def daily_bars(self, ticker: str, months: int = 12) -> list[Bar]:
+        return self._try("daily_bars", ticker, months)
+
+    def live_price(self, ticker: str) -> float:
+        return self._try("live_price", ticker)
+
+    def security_name(self, ticker: str) -> str | None:
+        for provider in self.providers:
+            try:
+                name = provider.security_name(ticker)
+            except DataError:
+                continue
+            if name:
+                return name
+        return None
+
+
+# --------------------------------------------------------------- 共用快取
+
+
+def _read_bar_cache(
+    cache_dir: Path | None, ticker: str, ttl_hours: float
+) -> list[Bar] | None:
+    if cache_dir is None:
+        return None
+    path = Path(cache_dir) / f"{ticker}.json"
+    if not path.exists():
+        return None
+    if (time.time() - path.stat().st_mtime) / 3600 > ttl_hours:
+        return None
+    with path.open(encoding="utf-8") as handle:
+        return [Bar(**row) for row in json.load(handle)]
+
+
+def _write_bar_cache(cache_dir: Path | None, ticker: str, bars: list[Bar]) -> None:
+    if cache_dir is None:
+        return
+    path = Path(cache_dir) / f"{ticker}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump([bar.__dict__ for bar in bars], handle, ensure_ascii=False)
+
+
+def _epoch_to_taipei_date(stamp: int | float) -> str:
+    """Yahoo 的時間戳是 UTC epoch，要換算成台北當地日期。"""
+    return datetime.fromtimestamp(int(stamp), tz=TAIPEI).date().isoformat()

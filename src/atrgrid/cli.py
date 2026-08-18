@@ -8,6 +8,8 @@
     atrgrid backtest        單一標的回測
     atrgrid fetch           下載日 K 存成 CSV
     atrgrid lot             查詢某價位的「一份」是幾股
+    atrgrid serve           啟動本機網頁操作台
+    atrgrid export-page     把目前快照輸出成單檔 HTML（唯讀）
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ from .config import (
     load_settings,
     resolve_params,
 )
-from .data import DataError, PriceProvider, export_csv, make_provider
+from .data import PROVIDER_KINDS, DataError, PriceProvider, export_csv, make_provider
 from .engine import (
     BUY,
     SELL,
@@ -498,6 +500,87 @@ def cmd_lot(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------- 參數
 
 
+# -------------------------------------------------------------------- serve
+
+
+def _service(args: argparse.Namespace):
+    from .web import GridService
+
+    settings_path, _, state_path = _paths(args)
+    overrides: dict[str, float] = {}
+    for item in getattr(args, "price", None) or []:
+        ticker, _, value = item.partition("=")
+        overrides[ticker.strip()] = float(value)
+    return GridService(
+        config_dir=settings_path.parent,
+        state_path=state_path,
+        provider_kind=args.provider,
+        csv_dir=Path(args.csv_dir) if getattr(args, "csv_dir", None) else None,
+        months=args.months,
+        live_overrides=overrides,
+    )
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    from .web import serve
+
+    service = _service(args)
+    service.snapshot()  # 提早驗證設定與狀態，不要等到瀏覽器打開才爆
+    serve(
+        service,
+        host=args.host,
+        port=args.port,
+        open_browser=not args.no_browser,
+    )
+    return 0
+
+
+def cmd_export_page(args: argparse.Namespace) -> int:
+    """把目前的快照與一次計算結果內嵌進 HTML，產生可離線開啟的唯讀頁面。"""
+    from .web import PAGE
+
+    service = _service(args)
+    snapshot = service.snapshot()
+    payload: dict = {"snapshot": snapshot}
+    if not args.no_advise:
+        try:
+            payload["advice"] = service.advise()
+        except DataError as exc:
+            print(f"取價失敗，只輸出狀態快照：{exc}", file=sys.stderr)
+
+    html = PAGE.read_text(encoding="utf-8")
+    blob = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
+    html = html.replace(
+        '<script id="embedded" type="application/json">null</script>',
+        f'<script id="embedded" type="application/json">{blob}</script>',
+    )
+    if args.bare:
+        # Artifact 會自己包 <!doctype>/<head>/<body>，這裡只留內容本身。
+        html = _strip_document_skeleton(html)
+
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+    print(f"已輸出唯讀頁面 → {out}（{len(html):,} bytes）")
+    return 0
+
+
+def _strip_document_skeleton(html: str) -> str:
+    """去掉 doctype 與 html/head/body 外殼，保留 <title>、<style> 與內容。
+
+    給 Artifact 這類會自行提供外殼的環境使用。
+    """
+    import re
+
+    html = re.sub(r"(?is)^\s*<!doctype[^>]*>", "", html)
+    html = re.sub(r"(?is)</?html[^>]*>", "", html)
+    html = re.sub(r"(?is)</?body[^>]*>", "", html)
+    html = re.sub(r"(?is)<head[^>]*>|</head>", "", html)
+    # meta charset / viewport 由外殼負責
+    html = re.sub(r"(?is)<meta[^>]*>\s*", "", html)
+    return html.strip() + "\n"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="atrgrid", description="ATR 自適應網格 · 台股零股每日建議系統"
@@ -508,7 +591,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     def add_data_args(p: argparse.ArgumentParser) -> None:
         p.add_argument(
-            "--provider", choices=["twse", "csv"], default="twse", help="行情來源"
+            "--provider",
+            choices=list(PROVIDER_KINDS),
+            default="auto",
+            help="行情來源（預設 auto：Yahoo→證交所→FinMind）",
         )
         p.add_argument("--csv-dir", help="csv provider 的資料夾")
         p.add_argument(
@@ -588,6 +674,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--asset-class", default="equity", choices=["equity", "bond", "leveraged"]
     )
     p_lot.set_defaults(func=cmd_lot)
+
+    p_serve = sub.add_parser("serve", help="啟動本機網頁操作台")
+    add_data_args(p_serve)
+    p_serve.add_argument("--host", default="127.0.0.1", help="只建議綁 localhost")
+    p_serve.add_argument("--port", type=int, default=8770)
+    p_serve.add_argument("--no-browser", action="store_true", help="不要自動開瀏覽器")
+    p_serve.set_defaults(func=cmd_serve)
+
+    p_export = sub.add_parser("export-page", help="輸出單檔唯讀 HTML")
+    add_data_args(p_export)
+    p_export.add_argument("--out", default="reports/page.html")
+    p_export.add_argument(
+        "--no-advise", action="store_true", help="只輸出狀態，不執行取價與計算"
+    )
+    p_export.add_argument(
+        "--bare",
+        action="store_true",
+        help="去掉 html/head/body 外殼，供 Artifact 等自帶外殼的環境使用",
+    )
+    p_export.set_defaults(func=cmd_export_page)
 
     return parser
 

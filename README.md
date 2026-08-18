@@ -197,6 +197,37 @@ atrgrid init
 
 ## 四、日常使用
 
+### 網頁操作台（建議用這個）
+
+```bash
+atrgrid serve          # 開 http://127.0.0.1:8770
+```
+
+一個頁面把每天的動作走完：按「抓取報價」→ 看今天要買賣幾股 → 成交後按「已成交」回填。
+
+![每日操作台](docs/console.png)
+
+價格欄可以直接改再按「重新計算」，方便用假設價格試算。左側的階數計一眼看出每檔
+離加碼／減碼上限還有多遠。
+
+**為什麼需要跑一個本機服務，而不是純前端頁面？**
+
+- Yahoo Finance 不送 CORS 標頭，瀏覽器直接 fetch 會被擋；FinMind 需要 token，
+  放在前端等於公開。由 Python 這端去抓，兩個問題都不存在。
+- 更重要的是決策邏輯完全重用同一份引擎，不必在 JavaScript 裡維護一份會慢慢
+  走樣的複本。頁面只負責顯示後端算好的結果。
+
+服務只綁 `127.0.0.1`、沒有帳號密碼 —— 這是單機工具，不要對外開放。
+
+要把某天的結果存成可分享的單檔 HTML（唯讀，不能抓報價也不能回填）：
+
+```bash
+atrgrid export-page --out reports/today.html
+atrgrid export-page --bare --out page.html   # 去掉外殼，供 Artifact 等環境使用
+```
+
+### 指令列
+
 ```bash
 # 每天 13:00
 atrgrid advise
@@ -215,12 +246,32 @@ atrgrid status
 `advise` 預設**不改變狀態**，只給建議。真正成交多少由 `record` 決定 ——
 因為零股常常掛不到、或只成交部分。
 
-### 用真實行情
+### 行情來源
+
+| `--provider` | 日 K | 盤中價 | 說明 |
+|---|---|---|---|
+| `auto`（預設） | ✓ | ✓ | Yahoo → 證交所 → FinMind，任一家掛掉還有備援 |
+| `yahoo` | ✓ | ✓ | 一次呼叫同時給日 K 與盤中價，最省事 |
+| `twse` | ✓ | ✓ | 證交所官方，但日 K 要逐月抓，較慢 |
+| `finmind` | ✓ | ✗ | 需要 token（環境變數 `FINMIND_TOKEN`），免費方案無盤中報價 |
+| `csv` | ✓ | ✗ | 讀 `data/bars/`，離線測試與回測用 |
 
 ```bash
-atrgrid fetch --out-dir data/bars       # 從證交所下載日 K
-atrgrid advise --provider twse          # 直接連線
+atrgrid fetch --out-dir data/bars    # 先抓下來存 CSV
+atrgrid advise --provider yahoo      # 或每次直接連線
 ```
+
+上櫃標的在 Yahoo 要用 `.TWO` 後綴。系統預設 `.TW` 與 `.TWO` 都試一次；
+要省一次請求可在 `portfolio.yaml` 指定：
+
+```yaml
+grid:
+  market: otc     # 或 listed
+```
+
+> 這些 provider 的解析邏輯有測試覆蓋（`tests/test_providers.py`，用錄製的回應格式），
+> 但**沒有**對線上服務做過實測 —— 開發環境連不到外網。上游若改了欄位名稱，
+> 要靠 `atrgrid verify-tickers` 實際連線才會發現。
 
 ### 離線試跑
 
@@ -286,12 +337,14 @@ src/atrgrid/
   indicators.py       Wilder ATR、EMA
   engine.py           網格引擎與風控閘門
   state.py            錨點、階數、成本批次的持久化
-  data.py             證交所 / CSV 行情來源
+  data.py             Yahoo / FinMind / 證交所 / CSV 行情來源
   backtest.py         參數檢查用回測
   report.py           終端機 / Markdown / HTML 報表
+  web.py              本機網頁後端（serve / export-page）
+  static/app.html     操作台頁面
   cli.py              指令入口
 state/state.json      網格記憶（會被自動更新，建議進版控）
-tests/                93 個測試
+tests/                144 個測試
 ```
 
 ```bash
