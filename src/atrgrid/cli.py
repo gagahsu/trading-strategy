@@ -164,7 +164,7 @@ def cmd_add_holding(args: argparse.Namespace) -> int:
                 print(f"{ticker} 取不到即時價：{exc}", file=sys.stderr)
                 print(
                     "（可加 --fallback-to-cost 改用 --avg-cost 建檔，"
-                    "或用 --price 直接指定錨點）",
+                    "或用 --anchor-price 直接指定錨點）",
                     file=sys.stderr,
                 )
                 return 1
@@ -773,8 +773,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--avg-cost", dest="avg_cost", type=float, required=True)
     p_add.add_argument("--date", help="建檔日（預設今天）")
     p_add.add_argument(
-        "--price", dest="anchor_price", type=float,
-        help="直接指定錨點價（實際買入價跟現在市價不同時用），不指定就抓即時價",
+        "--anchor-price", dest="anchor_price", type=float,
+        help="直接指定錨點價（實際買入價跟現在市價不同時用），不指定就抓即時價。"
+             "跟 --price TICKER=VALUE 不同，這個不用帶代號",
     )
     p_add.add_argument(
         "--fallback-to-cost", action="store_true",
