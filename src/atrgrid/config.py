@@ -20,7 +20,7 @@ import yaml
 
 from .fees import round_trip_cost_pct
 
-VALID_CLASSES = {"equity", "bond", "leveraged"}
+VALID_CLASSES = {"equity", "bond", "leveraged", "stock"}
 VALID_DRIFT_MODES = {"off", "up_only", "both"}
 
 

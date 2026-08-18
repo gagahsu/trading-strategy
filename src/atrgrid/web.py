@@ -38,7 +38,7 @@ from .config import (
 )
 from .data import DataError, PriceProvider, make_provider
 from .engine import BUY, SELL, Decision, evaluate, grid_step, lot_size, next_grid_levels
-from .fees import split_buy_cost, split_sell_cost
+from .fees import brokerage_fee, split_buy_cost, split_sell_cost
 from .indicators import wilder_atr
 from .state import Trade, add_position, load_state, save_state
 
@@ -381,10 +381,13 @@ class GridService:
 
         settings = self.settings()
         params = settings.params_for(asset_class)
-        result: dict[str, Any] = {
-            "lotShares": lot_size(price, settings),
-            "lotValue": round(lot_size(price, settings) * price, 0),
-        }
+        lot = lot_size(price, settings)
+        result: dict[str, Any] = {"lotShares": lot, "lotValue": round(lot * price, 0)}
+        if lot == 1 and brokerage_fee(price, settings.fee_discount, settings.fee_minimum) > settings.fee_minimum:
+            result["feeFloorNote"] = (
+                "股價偏高，1 股的手續費就已經超過最低消費，"
+                "「一份」已經是最小單位，不是算錯。"
+            )
         try:
             bars = self.provider(kind).daily_bars(ticker, months=self.months)
         except DataError as exc:

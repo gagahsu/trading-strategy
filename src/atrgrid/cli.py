@@ -43,7 +43,13 @@ from .engine import (
     lot_size,
     trading_day_hint,
 )
-from .fees import buy_cost, max_shares_for_min_fee, round_trip_cost_pct, sell_cost
+from .fees import (
+    brokerage_fee,
+    buy_cost,
+    max_shares_for_min_fee,
+    round_trip_cost_pct,
+    sell_cost,
+)
 from .indicators import wilder_atr
 from .report import (
     ReportContext,
@@ -203,6 +209,8 @@ def cmd_add_holding(args: argparse.Namespace) -> int:
             f"步長 {step:.3f}（{step / price * 100:.2f}%）　"
             f"一份 {lot} 股（約 {lot * price:,.0f} 元）"
         )
+        if lot == 1 and brokerage_fee(price, settings.fee_discount, settings.fee_minimum) > settings.fee_minimum:
+            print("※ 股價偏高，1 股的手續費就已經超過最低消費，「一份」已經是最小單位，不是算錯。")
 
     print("\n下一步：`atrgrid verify-tickers` 核對代號，通過後把 "
           "ticker_verified 改成 true，才會產生下單建議。")
@@ -759,7 +767,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_add.add_argument("--name", required=True, help="中文名稱")
     p_add.add_argument(
         "--asset-class", dest="asset_class", required=True,
-        choices=["equity", "bond", "leveraged"],
+        choices=["equity", "bond", "leveraged", "stock"],
     )
     p_add.add_argument("--shares", type=int, default=0, help="既有股數，預設 0（全新建倉）")
     p_add.add_argument("--avg-cost", dest="avg_cost", type=float, required=True)
@@ -837,7 +845,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_lot.add_argument("price", nargs="*", type=float, help="價格，留空則列出持股")
     p_lot.add_argument("--discount", default="0.28")
     p_lot.add_argument(
-        "--asset-class", default="equity", choices=["equity", "bond", "leveraged"]
+        "--asset-class", default="equity",
+        choices=["equity", "bond", "leveraged", "stock"],
     )
     p_lot.set_defaults(func=cmd_lot)
 

@@ -39,7 +39,7 @@ def workspace(tmp_path):
     (config / "settings.yaml").write_text(yaml.safe_dump({
         "fees": {"discount": "0.28", "minimum": 1},
         "risk": {"cash": 200000, "cash_floor": 0},
-        "defaults": {"equity": grid, "bond": grid, "leveraged": grid},
+        "defaults": {"equity": grid, "bond": grid, "leveraged": grid, "stock": grid},
     }), encoding="utf-8")
 
     (config / "portfolio.yaml").write_text(yaml.safe_dump({

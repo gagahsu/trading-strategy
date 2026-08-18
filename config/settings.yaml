@@ -76,3 +76,21 @@ defaults:
     drift_beta: 0.0
     trend_ema_period: 60
     allow_loss_sell: false
+
+  # ── 個股 ──────────────────────────────────────────────────────
+  # 非 ETF：證交稅 0.3%（ETF 的 3 倍），來回成本約 0.34~0.36%，比 ETF 高；
+  # 且是單一公司曝險，波動與基本面風險都比分散的 ETF 高，加碼上限收緊一點。
+  # 這組是起始值，實際依個股波動再調整。
+  stock:
+    atr_period: 14
+    atr_multiplier: 0.8
+    min_step_pct: 1.5        # 約為來回成本的 4 倍以上
+    max_step_pct: 6.0
+    max_buy_rungs: 3         # 單一個股不宜攤平太深
+    max_sell_rungs: 5
+    max_rungs_per_day: 2
+    gap_atr_limit: 3.0
+    drift_mode: "up_only"
+    drift_beta: 0.02
+    trend_ema_period: 60
+    allow_loss_sell: false

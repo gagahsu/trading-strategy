@@ -19,6 +19,10 @@ ETF_TAX_RATE = Decimal("0.001")
 #: 債券 ETF 現行免徵證交稅
 BOND_ETF_TAX_RATE = Decimal("0")
 
+#: 個股（非 ETF）證券交易稅率，是 ETF 的 3 倍 —— 這是把個股跟 ETF 分開建類的
+#: 主因，混在一起會少算稅。
+STOCK_TAX_RATE = Decimal("0.003")
+
 
 def _floor_int(value: Decimal) -> int:
     """元以下無條件捨去。"""
@@ -43,11 +47,16 @@ def brokerage_fee(
 
 
 def transaction_tax(amount: Decimal | float | int, asset_class: str) -> int:
-    """賣出證交稅。債券 ETF 免徵，其餘 ETF 0.1%，元以下捨去。"""
+    """賣出證交稅。債券 ETF 免徵、個股 0.3%、其餘（股票型/槓桿型 ETF）0.1%，元以下捨去。"""
     amount = Decimal(str(amount))
     if amount <= 0:
         return 0
-    rate = BOND_ETF_TAX_RATE if asset_class == "bond" else ETF_TAX_RATE
+    if asset_class == "bond":
+        rate = BOND_ETF_TAX_RATE
+    elif asset_class == "stock":
+        rate = STOCK_TAX_RATE
+    else:
+        rate = ETF_TAX_RATE
     return _floor_int(amount * rate)
 
 

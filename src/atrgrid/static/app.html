@@ -255,9 +255,10 @@ footer{margin-top:3rem;padding-top:1.1rem;border-top:1px solid var(--rule);
       <div class="field">
         <label for="af-class">資產類別</label>
         <select id="af-class">
-          <option value="equity">股票型</option>
-          <option value="bond">債券型（免證交稅）</option>
-          <option value="leveraged">槓桿型</option>
+          <option value="equity">股票型 ETF</option>
+          <option value="bond">債券型 ETF（免證交稅）</option>
+          <option value="leveraged">槓桿型 ETF</option>
+          <option value="stock">個股（證交稅 0.3%）</option>
         </select>
       </div>
       <div class="field-row">
@@ -614,7 +615,10 @@ async function recordExDividend(ds) {
   }
 }
 
-const CLASS_LABEL = {equity: "股票型", bond: "債券型（免證交稅）", leveraged: "槓桿型"};
+const CLASS_LABEL = {
+  equity: "股票型 ETF", bond: "債券型 ETF（免證交稅）",
+  leveraged: "槓桿型 ETF", stock: "個股（證交稅 0.3%）",
+};
 
 function openAddModal() {
   $("addForm").reset();
@@ -661,7 +665,8 @@ async function previewForAdd() {
     } else {
       $("af-preview").innerHTML =
         `ATR(${res.atr})　<b>${res.atrPct}%</b>　步長 ${res.step}（<b>${res.stepPct}%</b>）<br>` +
-        `一份 <b>${fmt(res.lotShares)}</b> 股（約 ${fmt(res.lotValue)} 元）＠ ${price}`;
+        `一份 <b>${fmt(res.lotShares)}</b> 股（約 ${fmt(res.lotValue)} 元）＠ ${price}` +
+        (res.feeFloorNote ? `<br><span class="muted">※ ${res.feeFloorNote}</span>` : "");
     }
   } catch (err) {
     $("af-preview").textContent = "試算失敗：" + err.message;
@@ -703,6 +708,7 @@ async function submitAdd(evt) {
       banner("info", "已新增",
         `${ticker}（${CLASS_LABEL[assetClass]}）錨點 ${res.anchor}，`
         + `ATR ${res.atrPct}%　步長 ${res.stepPct}%　一份 ${fmt(res.lotShares)} 股。`
+        + (res.feeFloorNote ? `${res.feeFloorNote}　` : "")
         + `記得跑 atrgrid verify-tickers 核對後把 ticker_verified 改成 true。`);
     }
     state.snapshot = await api("/api/snapshot");
