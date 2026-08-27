@@ -1,7 +1,7 @@
 {
   "version": 2,
   "cash": 170040.22,
-  "last_run_date": "2026-08-26",
+  "last_run_date": "2026-08-27",
   "positions": {
     "0052": {
       "ticker": "0052",
@@ -310,7 +310,7 @@
     "00988A": {
       "ticker": "00988A",
       "shares": 5000,
-      "anchor": 17.382,
+      "anchor": 17.3881,
       "rung": 0,
       "baseline_shares": 5000,
       "lots": [
@@ -324,12 +324,12 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-08-26"
+      "last_drift_date": "2026-08-27"
     },
     "00990A": {
       "ticker": "00990A",
       "shares": 4000,
-      "anchor": 16.5518,
+      "anchor": 16.5533,
       "rung": 0,
       "baseline_shares": 4000,
       "lots": [
@@ -343,12 +343,12 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-08-26"
+      "last_drift_date": "2026-08-27"
     },
     "00997A": {
       "ticker": "00997A",
       "shares": 6000,
-      "anchor": 11.7709,
+      "anchor": 11.7713,
       "rung": 0,
       "baseline_shares": 6000,
       "lots": [
@@ -362,7 +362,7 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-08-26"
+      "last_drift_date": "2026-08-27"
     }
   },
   "trades": []
