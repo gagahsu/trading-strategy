@@ -1,7 +1,7 @@
 {
   "version": 2,
   "cash": 170040.22,
-  "last_run_date": "2026-09-01",
+  "last_run_date": "2026-09-02",
   "positions": {
     "0052": {
       "ticker": "0052",
@@ -310,7 +310,7 @@
     "00988A": {
       "ticker": "00988A",
       "shares": 5000,
-      "anchor": 17.4006,
+      "anchor": 17.4027,
       "rung": 0,
       "baseline_shares": 5000,
       "lots": [
@@ -324,7 +324,7 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-09-01"
+      "last_drift_date": "2026-09-02"
     },
     "00990A": {
       "ticker": "00990A",
