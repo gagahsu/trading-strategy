@@ -1,12 +1,12 @@
 {
   "version": 2,
   "cash": 170040.22,
-  "last_run_date": "2026-09-24",
+  "last_run_date": "2026-09-25",
   "positions": {
     "0052": {
       "ticker": "0052",
       "shares": 769,
-      "anchor": 60.9449,
+      "anchor": 60.9592,
       "rung": 0,
       "baseline_shares": 769,
       "lots": [
@@ -20,7 +20,7 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-09-24"
+      "last_drift_date": "2026-09-25"
     },
     "00685L": {
       "ticker": "00685L",
@@ -63,7 +63,7 @@
     "00735": {
       "ticker": "00735",
       "shares": 346,
-      "anchor": 102.0066,
+      "anchor": 102.0167,
       "rung": 0,
       "baseline_shares": 346,
       "lots": [
@@ -77,7 +77,7 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-09-24"
+      "last_drift_date": "2026-09-25"
     },
     "00757": {
       "ticker": "00757",
@@ -101,7 +101,7 @@
     "00878": {
       "ticker": "00878",
       "shares": 1308,
-      "anchor": 32.4396,
+      "anchor": 32.4522,
       "rung": 0,
       "baseline_shares": 1308,
       "lots": [
@@ -115,7 +115,7 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-09-24"
+      "last_drift_date": "2026-09-25"
     },
     "00910": {
       "ticker": "00910",
@@ -177,7 +177,7 @@
     "00947": {
       "ticker": "00947",
       "shares": 754,
-      "anchor": 36.4836,
+      "anchor": 36.4894,
       "rung": 0,
       "baseline_shares": 754,
       "lots": [
@@ -191,7 +191,7 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-09-24"
+      "last_drift_date": "2026-09-25"
     },
     "00954": {
       "ticker": "00954",
