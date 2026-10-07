@@ -1,12 +1,12 @@
 {
   "version": 2,
   "cash": 170040.22,
-  "last_run_date": "2026-10-06",
+  "last_run_date": "2026-10-07",
   "positions": {
     "0052": {
       "ticker": "0052",
       "shares": 769,
-      "anchor": 61.0901,
+      "anchor": 61.1191,
       "rung": 0,
       "baseline_shares": 769,
       "lots": [
@@ -20,7 +20,7 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-10-06"
+      "last_drift_date": "2026-10-07"
     },
     "00685L": {
       "ticker": "00685L",
@@ -63,7 +63,7 @@
     "00735": {
       "ticker": "00735",
       "shares": 346,
-      "anchor": 102.1384,
+      "anchor": 102.1729,
       "rung": 0,
       "baseline_shares": 346,
       "lots": [
@@ -77,12 +77,12 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-10-06"
+      "last_drift_date": "2026-10-07"
     },
     "00757": {
       "ticker": "00757",
       "shares": 1109,
-      "anchor": 137.45,
+      "anchor": 137.4546,
       "rung": 0,
       "baseline_shares": 1109,
       "lots": [
@@ -96,12 +96,12 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": null
+      "last_drift_date": "2026-10-07"
     },
     "00878": {
       "ticker": "00878",
       "shares": 1308,
-      "anchor": 32.5501,
+      "anchor": 32.5674,
       "rung": 0,
       "baseline_shares": 1308,
       "lots": [
@@ -115,7 +115,7 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-10-06"
+      "last_drift_date": "2026-10-07"
     },
     "00910": {
       "ticker": "00910",
@@ -177,7 +177,7 @@
     "00947": {
       "ticker": "00947",
       "shares": 754,
-      "anchor": 36.5595,
+      "anchor": 36.5778,
       "rung": 0,
       "baseline_shares": 754,
       "lots": [
@@ -191,7 +191,7 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-10-06"
+      "last_drift_date": "2026-10-07"
     },
     "00954": {
       "ticker": "00954",
