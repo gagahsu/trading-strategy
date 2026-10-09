@@ -1,12 +1,12 @@
 {
   "version": 2,
   "cash": 170040.22,
-  "last_run_date": "2026-10-08",
+  "last_run_date": "2026-10-09",
   "positions": {
     "0052": {
       "ticker": "0052",
       "shares": 769,
-      "anchor": 61.1509,
+      "anchor": 61.1849,
       "rung": 0,
       "baseline_shares": 769,
       "lots": [
@@ -20,7 +20,7 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-10-08"
+      "last_drift_date": "2026-10-09"
     },
     "00685L": {
       "ticker": "00685L",
@@ -63,7 +63,7 @@
     "00735": {
       "ticker": "00735",
       "shares": 346,
-      "anchor": 102.2115,
+      "anchor": 102.2533,
       "rung": 0,
       "baseline_shares": 346,
       "lots": [
@@ -77,12 +77,12 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-10-08"
+      "last_drift_date": "2026-10-09"
     },
     "00757": {
       "ticker": "00757",
       "shares": 1109,
-      "anchor": 137.4646,
+      "anchor": 137.4802,
       "rung": 0,
       "baseline_shares": 1109,
       "lots": [
@@ -96,12 +96,12 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-10-08"
+      "last_drift_date": "2026-10-09"
     },
     "00878": {
       "ticker": "00878",
       "shares": 1308,
-      "anchor": 32.5855,
+      "anchor": 32.6042,
       "rung": 0,
       "baseline_shares": 1308,
       "lots": [
@@ -115,7 +115,7 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-10-08"
+      "last_drift_date": "2026-10-09"
     },
     "00910": {
       "ticker": "00910",
@@ -177,7 +177,7 @@
     "00947": {
       "ticker": "00947",
       "shares": 754,
-      "anchor": 36.5979,
+      "anchor": 36.6196,
       "rung": 0,
       "baseline_shares": 754,
       "lots": [
@@ -191,7 +191,7 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-10-08"
+      "last_drift_date": "2026-10-09"
     },
     "00954": {
       "ticker": "00954",
@@ -272,7 +272,7 @@
     "00981A": {
       "ticker": "00981A",
       "shares": 6000,
-      "anchor": 29.61,
+      "anchor": 29.6116,
       "rung": 0,
       "baseline_shares": 6000,
       "lots": [
@@ -286,7 +286,7 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": null
+      "last_drift_date": "2026-10-09"
     },
     "00981D": {
       "ticker": "00981D",
