@@ -1,7 +1,7 @@
 {
   "version": 2,
   "cash": 170040.22,
-  "last_run_date": "2026-11-18",
+  "last_run_date": "2026-11-19",
   "positions": {
     "0052": {
       "ticker": "0052",
@@ -101,7 +101,7 @@
     "00878": {
       "ticker": "00878",
       "shares": 1308,
-      "anchor": 33.1545,
+      "anchor": 33.1644,
       "rung": 0,
       "baseline_shares": 1308,
       "lots": [
@@ -115,7 +115,7 @@
       "realized_pnl": 0.0,
       "last_trade_date": null,
       "applied_ex_dividends": [],
-      "last_drift_date": "2026-11-18"
+      "last_drift_date": "2026-11-19"
     },
     "00910": {
       "ticker": "00910",
